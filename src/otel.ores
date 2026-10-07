@@ -82,6 +82,7 @@ define module otel as
     val String name;
     val int started;
     let bool ended = false;
+    let int duration = 0;
     pub constructor(String service, String trace, String id, String parent, String name, int started) {
       self.service = service;
       self.trace = trace;
@@ -93,6 +94,7 @@ define module otel as
     pub trace_id(): String { return self.trace; }
     pub span_id(): String { return self.id; }
     pub elapsed_ns(): int {
+      if self.ended; then return self.duration; fi
       val int elapsed = now_ns() - self.started;
       return elapsed < 0 ? 0 : elapsed;
     }
@@ -103,8 +105,9 @@ define module otel as
     // Actor-local mutation makes completion idempotent; never share a live Span.
     pub finish(mut self)(String outcome, int http_status): bool {
       if self.ended; then return false; fi
+      self.duration = self.elapsed_ns();
       self.ended = true;
-      val int duration = self.elapsed_ns();
+      val int duration = self.duration;
       stdio.println("{\"schema\":\"oreslang-otel.v1\",\"signal\":\"span\",\"timestamp_unix_ms\":" + integer(process.unix_ms())
         + ",\"service\":" + quote(self.service) + ",\"ores_trace_id\":" + quote(self.trace)
         + ",\"span_id\":" + quote(self.id) + ",\"parent_span_id\":" + quote(self.parent)
