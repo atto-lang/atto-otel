@@ -1,0 +1,9 @@
+import module otel from "../src/otel";
+pub routine main(): void {
+  val span = otel.start("test", "ores-trace-test", "", "request");
+  span.event("INFO", "quote\" slash\\ newline\n nul\u0000 tab\t emoji😀");
+  span.finish("ok", 200);
+  span.finish("error", 500);
+  otel.metric("test", "ores-trace-test", "requests", "counter", "1", 1);
+  return;
+}
