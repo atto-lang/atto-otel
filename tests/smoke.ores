@@ -5,10 +5,12 @@ pub routine main(): void {
   span.event("INFO", "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008\u0009\u000a\u000b\u000c\u000d\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f");
   span.event("INFO", otel.integer(-9223372036854775807 - 1) + "|" + otel.integer(9223372036854775807) + "|" + otel.integer(0) + "|" + otel.integer(-1) + "|" + otel.integer(100));
   val child = otel.start("test", span.trace_id(), span.span_id(), "child");
-  child.finish("ok", 0);
+  child.finish("o\"k", 0);
   span.finish("ok", 200);
   span.event("INFO", "ignored after finish");
   span.finish("error", 500);
-  otel.metric("test", "ores-trace-test", "requests", "counter", "1", 1);
+  otel.log("ser\\vice\nquote\"", "ores-trace-test", "span-direct", "WARN", "direct \\ log"); 
+  otel.metric("test", "ores-trace-test", "req\\uests\nquote\"", "counter", "1", 1);
+  otel.metric("test", "ores-trace-test", "int64-min", "gauge", "units", -9223372036854775807 - 1);
   return;
 }
