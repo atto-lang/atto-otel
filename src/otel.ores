@@ -69,8 +69,9 @@ define module otel as
 
   // Unknown severities and thresholds fail closed. ALL/OFF are threshold-only.
   pub fnc should_log(String level, String minimum): bool {
+    if minimum == "OFF"; then return false; fi
     val int rank = severity_rank(level);
-    if rank < 0 || minimum == "OFF"; then return false; fi
+    if rank < 0; then return false; fi
     if minimum == "ALL"; then return true; fi
     val int threshold = severity_rank(minimum);
     return threshold >= 0 && rank >= threshold;
@@ -79,7 +80,8 @@ define module otel as
   pub fnc trace_id(): String { return "ores-trace-" + process.unique_id(); }
   pub fnc now_ns(): int { return process.monotonic_ns(); }
 
-  // One println per record prevents fields from separate actors interleaving.
+  // Serialize each record in one stdout call. Separate contexts or processes
+  // still require a shared synchronized sink for guaranteed line atomicity.
   pub fnc log(String service, String trace, String span, String level, String message): void {
     stdio.println("{\"schema\":\"oreslang-otel.v1\",\"signal\":\"log\",\"timestamp_unix_ms\":" + integer(process.unix_ms())
       + ",\"service\":" + quote(service) + ",\"ores_trace_id\":" + quote(trace)
