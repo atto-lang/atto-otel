@@ -59,18 +59,14 @@ define module otel as
 
   // One println per record prevents fields from separate actors interleaving.
   pub fnc log(String service, String trace, String span, String level, String message): void {
-    stdio.println("{\"schema\":\"oreslang-otel.v1\",\"signal\":\"log\",\"timestamp_unix_ms\":" + integer(process.unix_ms())
-      + ",\"service\":" + quote(service) + ",\"ores_trace_id\":" + quote(trace)
-      + ",\"span_id\":" + quote(span) + ",\"severity\":" + quote(level) + ",\"body\":" + quote(message) + "}");
+    stdio.println(`{"schema":"oreslang-otel.v1","signal":"log","timestamp_unix_ms":${integer(process.unix_ms())},"service":${quote(service)},"ores_trace_id":${quote(trace)},"span_id":${quote(span)},"severity":${quote(level)},"body":${quote(message)}}`);
     return;
   }
 
   // Counter deltas and histogram observations are exported immediately. A collector
   // can aggregate them without an unbounded in-process label/cardinality cache.
   pub fnc metric(String service, String trace, String name, String kind, String unit, int value): void {
-    stdio.println("{\"schema\":\"oreslang-otel.v1\",\"signal\":\"metric\",\"timestamp_unix_ms\":" + integer(process.unix_ms())
-      + ",\"service\":" + quote(service) + ",\"ores_trace_id\":" + quote(trace) + ",\"name\":" + quote(name)
-      + ",\"kind\":" + quote(kind) + ",\"unit\":" + quote(unit) + ",\"value\":" + integer(value) + "}");
+    stdio.println(`{"schema":"oreslang-otel.v1","signal":"metric","timestamp_unix_ms":${integer(process.unix_ms())},"service":${quote(service)},"ores_trace_id":${quote(trace)},"name":${quote(name)},"kind":${quote(kind)},"unit":${quote(unit)},"value":${integer(value)}}`);
     return;
   }
 
@@ -108,11 +104,7 @@ define module otel as
       self.duration = self.elapsed_ns();
       self.ended = true;
       val int duration = self.duration;
-      stdio.println("{\"schema\":\"oreslang-otel.v1\",\"signal\":\"span\",\"timestamp_unix_ms\":" + integer(process.unix_ms())
-        + ",\"service\":" + quote(self.service) + ",\"ores_trace_id\":" + quote(self.trace)
-        + ",\"span_id\":" + quote(self.id) + ",\"parent_span_id\":" + quote(self.parent)
-        + ",\"name\":" + quote(self.name) + ",\"duration_ns\":" + integer(duration)
-        + ",\"outcome\":" + quote(outcome) + ",\"http_status\":" + integer(http_status) + "}");
+      stdio.println(`{"schema":"oreslang-otel.v1","signal":"span","timestamp_unix_ms":${integer(process.unix_ms())},"service":${quote(self.service)},"ores_trace_id":${quote(self.trace)},"span_id":${quote(self.id)},"parent_span_id":${quote(self.parent)},"name":${quote(self.name)},"duration_ns":${integer(duration)},"outcome":${quote(outcome)},"http_status":${integer(http_status)}}`);
       return true;
     }
   end
