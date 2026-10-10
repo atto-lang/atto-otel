@@ -59,12 +59,22 @@ request bodies or sensitive attributes into records.
 
 `metric(service, trace, name, kind, unit, value)` emits an integer observation:
 use `counter` for nonnegative deltas, `gauge` for current values and `histogram`
-for individual samples. Aggregation belongs to the consumer. No buffering,
-retry queue or unbounded attribute cache is allocated. Output uses one stdout
-println per JSON record; stdout I/O and serialization add measured overhead.
-A single call does not guarantee atomic records across separate Ores contexts,
-processes or unsynchronized output sinks; collectors must delimit JSON Lines
-and provide any required multi-writer serialization.
+for individual samples. Aggregation belongs to the consumer. The native
+emitter now creates one immutable JSONL string and enqueues it with
+`stdio.stdout.log_async(...)`, rather than blocking actor carriers on
+stdout's BufferedWriter lock. The shared per-context OresVM async-stdio drain
+uses bounded admission (1,024 records, 65,536 bytes each) and explicitly fails
+on queue overflow instead of dropping telemetry silently. A successful enqueue
+is not equivalent to physical delivery; graceful OresVM shutdown automatically
+drains accepted records and reports sink failures. For an in-process checkpoint
+call `await stdio.flush_async_logs()`.
+
+The OTel module keeps no separate unbounded queue or background exporter.
+The OresVM stdout queue and external telemetry collector have different delivery
+guarantees. SIGKILL, a stuck sink beyond the configured deadline, collector
+failures, and power loss remain outside the graceful flush guarantee.
+Ordering is per Ores context; independent contexts or processes do not share
+one total order.
 
 Records use `schema: "oreslang-otel.v1"`, an epoch millisecond timestamp,
 `service`, `ores_trace_id`, and `signal`. Span records add opaque `span_id`,
