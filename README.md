@@ -37,12 +37,34 @@ ambient context, mutable global tracer or actor-shared span registry.
 `start_at(service, trace, id, parent, name, started_ns)` supports reconstructing
 context with an existing **same-process** monotonic start timestamp.
 
-`log(service, trace, span, severity, body)` emits a correlated log.
+`log(service, trace, span, severity, body)` emits an unconditional correlated log.
+For severity-aware logging, use `should_log(severity, minimum)` **before**
+constructing a message. This is explicitly caller-configured, does not read
+process environment on a hot path and never stores mutable logging policy
+across actors. Supported severities are `TRACE`, `DEBUG`, `INFO`, `WARN`
+(or `WARNING`), `ERROR` and `FATAL`; `ALL` and `OFF` are threshold-only.
+Unknown severities or thresholds fail closed in `should_log`.
+
+```ores
+val minimum = "INFO"; // Read configuration once in the owning actor.
+if otel.should_log("DEBUG", minimum); then
+  otel.log("my-service", trace, span_id, "DEBUG", expensive_message());
+fi
+```
+
+The explicit guard avoids evaluating `expensive_message()` when filtered.
+Calling `log()` directly remains unconditional for backwards compatibility.
+Filtering never implies redaction: callers must not pass secrets, credentials,
+request bodies or sensitive attributes into records.
+
 `metric(service, trace, name, kind, unit, value)` emits an integer observation:
 use `counter` for nonnegative deltas, `gauge` for current values and `histogram`
 for individual samples. Aggregation belongs to the consumer. No buffering,
 retry queue or unbounded attribute cache is allocated. Output uses one stdout
 println per JSON record; stdout I/O and serialization add measured overhead.
+A single call does not guarantee atomic records across separate Ores contexts,
+processes or unsynchronized output sinks; collectors must delimit JSON Lines
+and provide any required multi-writer serialization.
 
 Records use `schema: "oreslang-otel.v1"`, an epoch millisecond timestamp,
 `service`, `ores_trace_id`, and `signal`. Span records add opaque `span_id`,

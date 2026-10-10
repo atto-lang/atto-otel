@@ -20,6 +20,10 @@ assert all(row['duration_ns'] >= 0 for row in spans)
 assert logs[0]['body'] == 'quote" slash\\ newline\n nul\0 tab\t emoji😀'
 assert logs[1]['body'] == ''.join(map(chr, range(32)))
 assert logs[2]['body'] == '-9223372036854775808|9223372036854775807|0|-1|100'
-assert len(logs) == 3  # event after finish is ignored
+assert [row['body'] for row in logs[3:]] == [
+    'visible warning', 'visible all', 'visible equal'
+]
+assert all(row['schema'] == 'oreslang-otel.v1' for row in rows)
+assert len(logs) == 6  # after-finish and severity-filtered events are ignored
 assert len(metrics) == 1 and metrics[0]['value'] == 1
-print('PASS: native spans, parent correlation, idempotence, JSON escaping and int64 encoding')
+print('PASS: native spans, correlation, idempotence, JSON escaping, int64 and severity gating')
