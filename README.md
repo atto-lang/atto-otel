@@ -5,7 +5,7 @@ monotonic duration measurement and metric observations. All telemetry policy,
 span lifecycle, integer/JSON encoding and console export live in `src/otel.ores`.
 The only runtime dependency is the standard library of `oreslang-source.java`.
 No Java imports, OTel SDK, other Oreslang package, network exporter or submodule
-is needed by this library. Python/Maven/JDK are development tools only.
+is needed by this library. Rust/Maven/JDK are development tools only.
 
 ## Use
 
@@ -82,7 +82,7 @@ Build that revision with JDK 25 and Maven:
 
 ```sh
 mvn -q -f "$ORESLANG_SOURCE_DIR/pom.xml" -DskipTests package dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
-ORES_JAVA="$JAVA_HOME/bin/java" python3 tests/check.py
+ORES_JAVA="$JAVA_HOME/bin/java" ./scripts/check.sh
 ```
 
 Export `ORESLANG_SOURCE_DIR` to the compiler checkout. Tests execute actual
@@ -106,3 +106,9 @@ OTLP transport, sampling, batching/retries, profiles, distributed context,
 configuration loading and canonical ORES contract admission are not implemented.
 The demo starts a local trace per admitted request and returns X-Ores-Trace-Id;
 it does not trust incoming correlation headers or imply cross-service tracing.
+
+## Exact integer encoding and local checks
+
+Integer encoding stays in native Oreslang. Digit selection uses at most four exact comparisons/subtractions per nonzero decimal position, without floating-point division or a Java formatter. The required core runtime preserves signed int64 ordering beyond 2^53.
+
+The Rust checker replaces tests/check.py and independently parses actual Oreslang output. It retains all smoke checks for correlation, escaping, idempotence and severity gating, then checks 215 decimal boundaries and deterministic random int64 samples against Rust integer formatting. Run `cargo test --locked --manifest-path tools/telemetry-check/Cargo.toml` for malformed-record rejection checks.

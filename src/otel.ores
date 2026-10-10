@@ -44,11 +44,27 @@ define module otel as
     let String result = "";
     for (const power of powers) {
       let int digit = 0;
-      loop {
-        if remaining > power; then break; fi
-        remaining = remaining - power;
-        digit = digit + 1;
-      }
+      // Select a digit in at most four exact comparisons/subtractions. All
+      // multiples fit int64, including -10^18 * 8, and no float division is
+      // used. Keep encoding policy in Oreslang rather than a host formatter.
+      if remaining <= power; then
+        if remaining <= power * 8; then
+          remaining = remaining - power * 8;
+          digit = digit + 8;
+        fi
+        if remaining <= power * 4; then
+          remaining = remaining - power * 4;
+          digit = digit + 4;
+        fi
+        if remaining <= power * 2; then
+          remaining = remaining - power * 2;
+          digit = digit + 2;
+        fi
+        if remaining <= power; then
+          remaining = remaining - power;
+          digit = digit + 1;
+        fi
+      fi
       if digit > 0 || result != ""; then result = result + digits.get(digit); fi
     }
     return value < 0 ? "-" + result : result;
