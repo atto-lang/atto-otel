@@ -190,7 +190,7 @@ mod tests {
         use serde_json::{json, Value};
         let controls: String = (0_u8..32).map(char::from).collect();
         let bodies = [
-            "quote\\\" slash\\\\ newline\\n nul\\0 tab\\t emoji😀".to_owned(),
+            "quote\" slash\\ newline\n nul\0 tab\t emoji😀".to_owned(),
             controls,
             "-9223372036854775808|9223372036854775807|0|-1|100".to_owned(),
             "visible warning".to_owned(),
@@ -218,7 +218,7 @@ mod tests {
             "kind":"counter", "unit":"1", "value":1
         }));
         let render = |records: &[Value]| records.iter().map(Value::to_string)
-            .collect::<Vec<_>>().join("\\n");
+            .collect::<Vec<_>>().join("\n");
         assert!(super::check_smoke(&render(&rows)).is_ok(), "valid strict fixture");
         rows.push(json!({
             "schema":"oreslang-otel.v1", "signal":"unknown",
