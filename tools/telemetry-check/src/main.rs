@@ -32,6 +32,33 @@ fn check_smoke(text: &str) -> Result<()> {
                 .into(),
         );
     }
+    // The smoke program is expected to emit exactly nine records. Unknown
+    // signals or unrecognized fields (especially sensitive attributes) must
+    // not pass merely because the expected log/span/metric counts match.
+    if rows.len() != 9 {
+        return Err("unexpected telemetry record count".into());
+    }
+    const COMMON: &[&str] = &["schema", "signal", "timestamp_unix_ms", "service", "ores_trace_id"];
+    const LOG: &[&str] = &["span_id", "severity", "body"];
+    const SPAN: &[&str] = &["span_id", "parent_span_id", "name", "duration_ns", "outcome", "http_status"];
+    const METRIC: &[&str] = &["name", "kind", "unit", "value"];
+    for row in &rows {
+        let signal = row["signal"].as_str().ok_or("missing telemetry signal")?;
+        let signal_keys: &[&str] = match signal {
+            "log" => LOG,
+            "span" => SPAN,
+            "metric" => METRIC,
+            _ => return Err("unexpected telemetry signal".into()),
+        };
+        let object = row.as_object().ok_or("non-object telemetry record")?;
+        if object.len() != COMMON.len() + signal_keys.len()
+            || object.keys().any(|key| {
+                !COMMON.contains(&key.as_str()) && !signal_keys.contains(&key.as_str())
+            })
+        {
+            return Err("unexpected telemetry record field".into());
+        }
+    }
     if spans[0]["name"] != "child" || spans[0]["parent_span_id"] != spans[1]["span_id"] {
         return Err("invalid child correlation".into());
     }
@@ -156,5 +183,51 @@ mod tests {
         assert!(super::check_smoke("{broken}").is_err());
         assert!(super::check_smoke("").is_err());
         assert!(super::check_smoke("{}").is_err());
+    }
+
+    #[test]
+    fn rejects_unexpected_signal_and_undeclared_fields_in_otherwise_valid_output() {
+        use serde_json::{json, Value};
+        let controls: String = (0_u8..32).map(char::from).collect();
+        let bodies = [
+            "quote\\\" slash\\\\ newline\\n nul\\0 tab\\t emoji😀".to_owned(),
+            controls,
+            "-9223372036854775808|9223372036854775807|0|-1|100".to_owned(),
+            "visible warning".to_owned(),
+            "visible all".to_owned(),
+            "visible equal".to_owned(),
+        ];
+        let mut rows: Vec<Value> = bodies.iter().map(|body| json!({
+            "schema":"oreslang-otel.v1", "signal":"log", "timestamp_unix_ms":1700000000001_i64,
+            "service":"test", "ores_trace_id":"ores-trace-test",
+            "span_id":"parent", "severity":"INFO", "body":body
+        })).collect();
+        rows.push(json!({
+            "schema":"oreslang-otel.v1", "signal":"span", "timestamp_unix_ms":1700000000001_i64,
+            "service":"test", "ores_trace_id":"ores-trace-test", "span_id":"child",
+            "parent_span_id":"parent", "name":"child", "duration_ns":1, "outcome":"ok", "http_status":0
+        }));
+        rows.push(json!({
+            "schema":"oreslang-otel.v1", "signal":"span", "timestamp_unix_ms":1700000000001_i64,
+            "service":"test", "ores_trace_id":"ores-trace-test", "span_id":"parent",
+            "parent_span_id":"", "name":"request", "duration_ns":2, "outcome":"ok", "http_status":200
+        }));
+        rows.push(json!({
+            "schema":"oreslang-otel.v1", "signal":"metric", "timestamp_unix_ms":1700000000001_i64,
+            "service":"test", "ores_trace_id":"ores-trace-test", "name":"requests",
+            "kind":"counter", "unit":"1", "value":1
+        }));
+        let render = |records: &[Value]| records.iter().map(Value::to_string)
+            .collect::<Vec<_>>().join("\\n");
+        assert!(super::check_smoke(&render(&rows)).is_ok(), "valid strict fixture");
+        rows.push(json!({
+            "schema":"oreslang-otel.v1", "signal":"unknown",
+            "timestamp_unix_ms":1700000000001_i64, "service":"test",
+            "ores_trace_id":"ores-trace-test"
+        }));
+        assert!(super::check_smoke(&render(&rows)).is_err());
+        rows.pop();
+        rows[0]["credential"] = json!("should be rejected");
+        assert!(super::check_smoke(&render(&rows)).is_err());
     }
 }
