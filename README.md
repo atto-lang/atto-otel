@@ -112,3 +112,5 @@ it does not trust incoming correlation headers or imply cross-service tracing.
 Integer encoding stays in native Oreslang. Digit selection uses at most four exact comparisons/subtractions per nonzero decimal position, without floating-point division or a Java formatter. The required core runtime preserves signed int64 ordering beyond 2^53.
 
 The Rust checker replaces tests/check.py and independently parses actual Oreslang output. It retains all smoke checks for correlation, escaping, idempotence and severity gating, then checks 215 decimal boundaries and deterministic random int64 samples against Rust integer formatting. Run `cargo test --locked --manifest-path tools/telemetry-check/Cargo.toml` for malformed-record rejection checks.
+
+The development launcher validates that `ORESLANG_SOURCE_DIR` is a clean compiler checkout at `SOURCE_REF` before invoking Java. Build its classes and classpath from that revision first. The checkout check identifies source; it does not attest the ignored compiled classes.
