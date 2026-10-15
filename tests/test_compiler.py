@@ -26,7 +26,7 @@ class CompilerAdmission(unittest.TestCase):
         (self.source/'target/classpath.txt').write_text('fixture-classpath')
         self.marker=self.root/'java-called'
         java=self.root/'java'
-        java.write_text('#!/bin/sh\ntouch "$JAVA_MARKER"\n')
+        java.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$JAVA_MARKER"\n')
         java.chmod(0o755)
         self.env={**os.environ,'ORESLANG_SOURCE_DIR':str(self.source),'ORES_JAVA':str(java),'JAVA_MARKER':str(self.marker)}
 
@@ -45,6 +45,7 @@ class CompilerAdmission(unittest.TestCase):
     def test_exact_clean_pin_launches(self):
         self.assertEqual(self.launch().returncode,0)
         self.assertTrue(self.marker.exists())
+        self.assertIn("--core-io=native-async-only", self.marker.read_text().splitlines())
 
     def test_wrong_and_floating_pins_rejected(self):
         (self.root/'SOURCE_REF').write_text('0'*40)
