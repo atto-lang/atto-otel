@@ -23,6 +23,9 @@ fn check_smoke(text: &str) -> Result<()> {
         .lines()
         .map(serde_json::from_str::<Value>)
         .collect::<std::result::Result<Vec<_>, _>>()?;
+    if rows.len() != 9 || rows.iter().any(|row| !row.is_object()) {
+        return Err("expected exactly nine telemetry records".into());
+    }
     let logs: Vec<_> = rows.iter().filter(|r| r["signal"] == "log").collect();
     let spans: Vec<_> = rows.iter().filter(|r| r["signal"] == "span").collect();
     let metrics: Vec<_> = rows.iter().filter(|r| r["signal"] == "metric").collect();
@@ -125,6 +128,9 @@ fn integers(root: &std::path::Path) -> Result<()> {
 }
 
 fn run() -> Result<()> {
+    if std::env::args_os().len() != 1 {
+        return Err("this check accepts no arguments".into());
+    }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -135,9 +141,6 @@ fn run() -> Result<()> {
     println!(
         "PASS: native spans, correlation, idempotence, JSON escaping, int64 and severity gating"
     );
-    if std::env::args_os().len() != 1 {
-        return Err("this check accepts no arguments".into());
-    }
     integers(&root)?;
     return Ok(());
 }
@@ -151,6 +154,53 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn smoke_rejects_unrecognized_extra_telemetry_records() {
+        use serde_json::json;
+        let base = json!({"schema":"oreslang-otel.v1", "ores_trace_id":"ores-trace-test",
+                          "timestamp_unix_ms":1700000000001_i64});
+        let controls: String = (0_u8..32).map(char::from).collect();
+        let bodies = [
+            "quote\" slash\\ newline\n nul\0 tab\t emoji😀",
+            controls.as_str(),
+            "-9223372036854775808|9223372036854775807|0|-1|100",
+            "visible warning",
+            "visible all",
+            "visible equal",
+        ];
+        let mut rows = Vec::new();
+        for body in bodies {
+            let mut row = base.clone();
+            row["signal"] = json!("log");
+            row["body"] = json!(body);
+            rows.push(row);
+        }
+        for (name, id, parent) in [("child", "child-id", "root-id"), ("request", "root-id", "")] {
+            let mut row = base.clone();
+            row["signal"] = json!("span");
+            row["name"] = json!(name);
+            row["span_id"] = json!(id);
+            row["parent_span_id"] = json!(parent);
+            row["duration_ns"] = json!(1);
+            rows.push(row);
+        }
+        let mut metric = base.clone();
+        metric["signal"] = json!("metric");
+        metric["value"] = json!(1);
+        rows.push(metric);
+        let encode = |rows: &[serde_json::Value]| {
+            rows.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert!(super::check_smoke(&encode(&rows)).is_ok());
+        let mut unknown = base;
+        unknown["signal"] = json!("unexpected");
+        rows.push(unknown);
+        assert!(super::check_smoke(&encode(&rows)).is_err());
+    }
+
     #[test]
     fn malformed_or_incomplete_records_fail_closed() {
         assert!(super::check_smoke("{broken}").is_err());
