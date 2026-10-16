@@ -68,3 +68,26 @@ actor scheduling and cancellation semantics.
 - Independently benchmark the disabled guarded path and the synchronous exporter.
 - Other backends are bootstrap subsets and do not yet claim userland package import
   parity. Unsupported OTel imports must fail closed.
+
+## Verified cross-repository native guest execution (2026-10-16)
+
+With the source Java logging PR at `6977b900e2601508ed2f1947ca5052b4060a68d9`,
+a private test repository mirrored 96 exact Java production/stdlib/test blobs,
+plus this repository's unchanged `src/otel.ores` (blob
+`6a1b9b940f10e4b273ae2b02be5cfff5e0572afc`) and
+`tests/smoke.ores` (blob
+`6480413e7a6f8b6bef1a8a279f777f8293dc9937`).
+JDK 25 compiled and executed that actual Oreslang guest, and an independent
+Python JSON parser validated 9 records (6 logs, 2 spans, 1 metric), their
+correlation, suppression behavior and exact signed 64-bit values.
+
+Evidence: [private fallback Actions run 38921925326](https://github.com/ores-dummy-org-oreslang-stack/ores-dummy-org-oreslang-stack-web-server.ores/actions/runs/38921925326).
+The Maven run passed 44 tests, including the guest smoke test; the JSONL
+verification step passed. The Rust telemetry checker in the exact subtree
+also passed 2 tests in [run 38915571390](https://github.com/ores-dummy-org-oreslang-stack/ores-dummy-org-oreslang-stack-web-server.ores/actions/runs/38915571390).
+
+**Limits:** The compiler mirror is an exact selected-file subset, not the full
+source Git tree. This is userland JSONL telemetry, not OTLP; no async exporter,
+batching, W3C trace context, privacy scrubber, native-image, or five-backend
+parity is implied. Do not route guest events through the core diagnostic
+flight recorder.
