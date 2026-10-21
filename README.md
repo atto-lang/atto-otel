@@ -114,3 +114,9 @@ Integer encoding stays in native Oreslang. Digit selection uses at most four exa
 The Rust checker replaces tests/check.py and independently parses actual Oreslang output. It retains all smoke checks for correlation, escaping, idempotence and severity gating, then checks 215 decimal boundaries and deterministic random int64 samples against Rust integer formatting. Run `cargo test --locked --manifest-path tools/telemetry-check/Cargo.toml` for malformed-record rejection checks.
 
 The development launcher validates that `ORESLANG_SOURCE_DIR` is a clean compiler checkout at `SOURCE_REF` before invoking Java. Build its classes and classpath from that revision first. The checkout check identifies source; it does not attest the ignored compiled classes.
+
+The compiler-launch host admission regression suite is implemented in Rust (no Python):
+`cargo test --locked --manifest-path tools/compiler-admission/Cargo.toml`.
+It covers exact clean source revisions, invalid/floating pins, dirty and untracked
+files, and rejection of a nested directory masquerading as a Git checkout.
+These use isolated mock Java launchers; they do not certify guest compiler behavior.
