@@ -12,5 +12,5 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - run: python3 -m unittest discover -s tests -p test_compiler.py -v
+      - run: cargo test --locked --manifest-path tools/compiler-admission/Cargo.toml -- --nocapture
       - run: cargo test --locked --manifest-path tools/telemetry-check/Cargo.toml
