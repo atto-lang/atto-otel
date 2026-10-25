@@ -1,0 +1,10 @@
+// Supplementary JSON Lines source-execution fixture from historical PR #2.
+// Do not replace tests/smoke.ores; execute with the SOURCE_REF-pinned compiler.
+import module otel from "../src/otel";
+pub routine main(): void {
+  otel.log("ser\\vice", "trace-template", "span-template", "WARN",
+           "quote\" slash\\ newline\n tab\t");
+  otel.metric("service", "trace-template", "int64-min", "gauge", "unit",
+              -9223372036854775807 - 1);
+  return;
+}
