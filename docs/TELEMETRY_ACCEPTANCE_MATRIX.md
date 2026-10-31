@@ -33,6 +33,12 @@
 | SEC-02 | G+S | Just-under / exactly / over 65,536 UTF-8-byte async record | Defined admission boundary; no unbounded in-queue record; serialization allocation before admission measured separately |
 | PAR-01 | B | Run supported ENC/MET/SPAN fixtures on each actual backend | Report individual backend and execution mode; unsupported cases remain `NOT_EXECUTED` |
 
+## Additional authored guest lifecycle fixture
+
+`tests/span-lifecycle.ores` starts a span with a deliberately future monotonic timestamp; tests nonnegative/clamped elapsed, emits exactly one event before completion, checks the first finish succeeds, the second finish returns false, duration remains frozen, and a post-finish event is suppressed. It prints an exact `LIFECYCLE_OK` sentinel. The Rust host oracle expects precisely two valid JSONL records followed by that sentinel and rejects wrong linkage, duration or extra emissions. Negative host unit oracles are included for a duplicated finish, late event, changed duration and incorrect sentinel.
+
+The `tools/telemetry-check/src/main.rs` runner now invokes this actual `.ores` fixture after the existing smoke fixture. The fixture is **authored but not compiler-executed** until GitHub Actions runner admission succeeds or an independently authorized equivalent exact-tree native execution receipt exists. It does not exercise actor-retirement or cancellation and must not be counted as those gates.
+
 ## Run recipe and release restrictions
 
 Host checks (not guest proof):
