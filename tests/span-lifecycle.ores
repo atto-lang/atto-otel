@@ -1,0 +1,32 @@
+import module otel from "../src/otel";
+pub routine main(): void {
+  // A deliberately future monotonic start tests nonnegative elapsed clamping.
+  // No wall clock or cross-process monotonic timestamps are compared.
+  val span = otel.start_at("test", "ores-trace-lifecycle", "root-lifecycle", "", "lifecycle", process.monotonic_ns() + 1000000000000);
+  if span.elapsed_ns() != 0; then
+    stdio.println("BAD_PRESTART");
+    return;
+  fi
+  span.event("INFO", "before-finish");
+  if !span.finish("ok", 200); then
+    stdio.println("BAD_FIRST_FINISH");
+    return;
+  fi
+  val int frozen_duration = span.elapsed_ns();
+  if frozen_duration != 0; then
+    stdio.println("BAD_FROZEN_DURATION");
+    return;
+  fi
+  if span.finish("error", 500); then
+    stdio.println("BAD_SECOND_FINISH");
+    return;
+  fi
+  if span.elapsed_ns() != frozen_duration; then
+    stdio.println("BAD_MUTATED_DURATION");
+    return;
+  fi
+  // The post-finish event must not produce a fourth output record.
+  span.event("WARN", "after-finish");
+  stdio.println("LIFECYCLE_OK");
+  return;
+}
