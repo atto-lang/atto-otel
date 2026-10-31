@@ -232,6 +232,38 @@ fn check_smoke(text: &str) -> Result<()> {
     return Ok(());
 }
 
+
+fn check_span_lifecycle(text: &str) -> Result<()> {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() != 3 || lines[2] != "LIFECYCLE_OK" {
+        return Err("span lifecycle guest did not finish with exact receipt and two JSONL rows".into());
+    }
+    let event = parse_unique_json_line(lines[0])?;
+    let span = parse_unique_json_line(lines[1])?;
+    check_record_schema(&event)?;
+    check_record_schema(&span)?;
+    if event["signal"] != "log"
+        || event["ores_trace_id"] != "ores-trace-lifecycle"
+        || event["span_id"] != "root-lifecycle"
+        || event["severity"] != "INFO"
+        || event["body"] != "before-finish"
+        || span["signal"] != "span"
+        || span["ores_trace_id"] != "ores-trace-lifecycle"
+        || span["span_id"] != "root-lifecycle"
+        || span["parent_span_id"] != ""
+        || span["name"] != "lifecycle"
+        || span["duration_ns"].as_i64() != Some(0)
+        || span["outcome"] != "ok"
+        || span["http_status"].as_i64() != Some(200)
+        || event["service"] != "test"
+        || span["service"] != "test"
+    {
+        return Err("span lifecycle guest produced an unexpected event, finish or duration".into());
+    }
+    Ok(())
+}
+
+
 fn integers(root: &std::path::Path) -> Result<()> {
     let mut values = vec![
         i64::MIN,
@@ -301,6 +333,8 @@ fn run() -> Result<()> {
     println!(
         "PASS: native spans, correlation, idempotence, JSON escaping, int64 and severity gating"
     );
+    check_span_lifecycle(&execute(&root, &root.join("tests/span-lifecycle.ores"))?)?;
+    println!("PASS: native span lifecycle, future-start clamp, frozen elapsed and one-time finish");
     integers(&root)?;
     return Ok(());
 }
@@ -390,6 +424,34 @@ mod tests {
         assert!(super::parse_unique_json_line("{} {}").is_err());
         assert!(super::parse_unique_json_line("[]").is_err());
         assert!(super::parse_unique_json_line("42").is_err());
+    }
+
+    #[test]
+    fn span_lifecycle_oracle_rejects_late_emission_and_duplicate_finish() {
+        use serde_json::json;
+        let event = json!({
+            "schema":"oreslang-otel.v1", "signal":"log",
+            "timestamp_unix_ms":1700000000001_i64, "service":"test",
+            "ores_trace_id":"ores-trace-lifecycle",
+            "span_id":"root-lifecycle", "severity":"INFO",
+            "body":"before-finish"
+        });
+        let span = json!({
+            "schema":"oreslang-otel.v1", "signal":"span",
+            "timestamp_unix_ms":1700000000002_i64, "service":"test",
+            "ores_trace_id":"ores-trace-lifecycle",
+            "span_id":"root-lifecycle", "parent_span_id":"",
+            "name":"lifecycle", "duration_ns":0, "outcome":"ok",
+            "http_status":200
+        });
+        let good = format!("{event}\\n{span}\\nLIFECYCLE_OK");
+        assert!(super::check_span_lifecycle(&good).is_ok());
+        assert!(super::check_span_lifecycle(&format!("{event}\\n{span}\\n{span}\\nLIFECYCLE_OK")).is_err());
+        assert!(super::check_span_lifecycle(&format!("{event}\\n{span}\\n{event}\\nLIFECYCLE_OK")).is_err());
+        assert!(super::check_span_lifecycle(&format!("{event}\\n{span}\\nBAD_SECOND_FINISH")).is_err());
+        let mut bad_span = span;
+        bad_span["duration_ns"] = json!(1);
+        assert!(super::check_span_lifecycle(&format!("{event}\\n{bad_span}\\nLIFECYCLE_OK")).is_err());
     }
 
     #[test]
