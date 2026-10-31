@@ -381,7 +381,7 @@ mod tests {
         assert!(super::parse_unique_json_line(repeated).is_err());
 
         // Both spellings decode to the identical JSON field name.
-        let escaped = r#"{"signal":"log","body":"first","bo\\u0064y":"second"}"#;
+        let escaped = r#"{"signal":"log","body":"first","bo\u0064y":"second"}"#;
         assert!(super::parse_unique_json_line(escaped).is_err());
         let unrelated = r#"{"signal":"log","body":"the word body is not a key"}"#;
         assert!(super::parse_unique_json_line(unrelated).is_ok());
