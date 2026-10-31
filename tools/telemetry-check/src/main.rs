@@ -1,5 +1,7 @@
+use serde::de::{self, MapAccess, Visitor};
+use serde::Deserialize;
 use serde_json::Value;
-use std::{error::Error, path::PathBuf, process::Command};
+use std::{error::Error, fmt, path::PathBuf, process::Command};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -16,6 +18,52 @@ fn execute(root: &std::path::Path, source: &std::path::Path) -> Result<String> {
         .into());
     }
     return Ok(String::from_utf8(output.stdout)?);
+}
+
+
+// serde_json::Value alone overwrites duplicate object keys. That can hide
+// ambiguous records from a downstream consumer with different duplicate-key
+// precedence. Reject ambiguous top-level fields before schema validation.
+// Nested JSON objects are not part of any telemetry.v1 field type and the
+// existing exact-field/type schema rejects them separately.
+struct UniqueRecord(Value);
+
+impl<'de> Deserialize<'de> for UniqueRecord {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct UniqueFields;
+        impl<'de> Visitor<'de> for UniqueFields {
+            type Value = UniqueRecord;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("JSON telemetry object with unique field names")
+            }
+
+            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
+            where
+                M: MapAccess<'de>,
+            {
+                let mut fields = serde_json::Map::new();
+                while let Some((key, value)) = map.next_entry::<String, Value>()? {
+                    if fields.contains_key(&key) {
+                        return Err(de::Error::custom(format!("duplicate telemetry field: {key}")));
+                    }
+                    fields.insert(key, value);
+                }
+                Ok(UniqueRecord(Value::Object(fields)))
+            }
+        }
+        deserializer.deserialize_map(UniqueFields)
+    }
+}
+
+fn parse_unique_json_line(line: &str) -> Result<Value> {
+    let mut decoder = serde_json::Deserializer::from_str(line);
+    let record = UniqueRecord::deserialize(&mut decoder)?;
+    decoder.end()?;
+    Ok(record.0)
 }
 
 
@@ -114,8 +162,8 @@ fn check_record_schema(row: &Value) -> Result<()> {
 fn check_smoke(text: &str) -> Result<()> {
     let rows = text
         .lines()
-        .map(serde_json::from_str::<Value>)
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        .map(parse_unique_json_line)
+        .collect::<Result<Vec<_>>>()?;
     if rows.len() != 9 || rows.iter().any(|row| !row.is_object()) {
         return Err("expected exactly nine telemetry records".into());
     }
@@ -323,6 +371,25 @@ mod tests {
         unknown["signal"] = json!("unexpected");
         rows.push(unknown);
         assert!(super::check_smoke(&encode(&rows)).is_err());
+    }
+
+    #[test]
+    fn duplicate_fields_fail_closed_even_with_json_escape_aliases() {
+        // Value deserialization alone would silently select the last body.
+        let repeated = r#"{"signal":"log","body":"first","body":"second"}"#;
+        assert!(serde_json::from_str::<serde_json::Value>(repeated).is_ok());
+        assert!(super::parse_unique_json_line(repeated).is_err());
+
+        // Both spellings decode to the identical JSON field name.
+        let escaped = r#"{"signal":"log","body":"first","bo\\u0064y":"second"}"#;
+        assert!(super::parse_unique_json_line(escaped).is_err());
+        let unrelated = r#"{"signal":"log","body":"the word body is not a key"}"#;
+        assert!(super::parse_unique_json_line(unrelated).is_ok());
+
+        // The line decoder must consume exactly one complete object.
+        assert!(super::parse_unique_json_line("{} {}").is_err());
+        assert!(super::parse_unique_json_line("[]").is_err());
+        assert!(super::parse_unique_json_line("42").is_err());
     }
 
     #[test]
