@@ -131,7 +131,15 @@ fn check_smoke(text: &str) -> Result<()> {
                 .into(),
         );
     }
-    if spans[0]["name"] != "child" || spans[0]["parent_span_id"] != spans[1]["span_id"] {
+    if spans[0]["name"] != "child"
+        || spans[0]["parent_span_id"] != spans[1]["span_id"]
+        || spans[0]["span_id"] == spans[1]["span_id"]
+        || spans[1]["parent_span_id"] != ""
+        || spans[0]["outcome"] != "ok"
+        || spans[1]["outcome"] != "ok"
+        || spans[0]["http_status"] != 0
+        || spans[1]["http_status"] != 200
+    {
         return Err("invalid child correlation".into());
     }
     for row in &rows {
@@ -157,12 +165,20 @@ fn check_smoke(text: &str) -> Result<()> {
         "visible all",
         "visible equal",
     ];
-    for (log, body) in logs.iter().zip(expected) {
+    let severities = ["INFO", "INFO", "INFO", "WARN", "INFO", "INFO"];
+    for ((log, body), severity) in logs.iter().zip(expected).zip(severities) {
+        if log["severity"] != severity {
+            return Err("incorrect log severity".into());
+        }
         if log["body"] != body {
             return Err(format!("incorrect log body: {}", log["body"]).into());
         }
     }
-    if metrics[0]["value"].as_i64() != Some(1) {
+    if metrics[0]["name"] != "requests"
+        || metrics[0]["kind"] != "counter"
+        || metrics[0]["unit"] != "1"
+        || metrics[0]["value"].as_i64() != Some(1)
+    {
         return Err("incorrect counter value".into());
     }
     return Ok(());
@@ -265,11 +281,16 @@ mod tests {
             "visible equal",
         ];
         let mut rows = Vec::new();
-        for body in bodies {
+        for (index, body) in bodies.into_iter().enumerate() {
             let mut row = base.clone();
             row["signal"] = json!("log");
+            if index == 3 {
+                row["severity"] = json!("WARN");
+            }
             row["body"] = json!(body);
-            row["severity"] = json!("INFO");
+            if index != 3 {
+                row["severity"] = json!("INFO");
+            }
             row["span_id"] = json!("root-id");
             rows.push(row);
         }
