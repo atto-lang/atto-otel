@@ -17,7 +17,7 @@
 | ENC-01 | H+G | Quotes, backslashes, NUL, U+0001–U+001F, tab/newline, astral Unicode in one emitted log | One parseable JSONL record per event; exact decoded body; no raw newline splitting |
 | ENC-02 | H+G | Signed int64 MIN, MAX, -1, 0, 1; neighboring base-10 boundaries; `2^53+1` | Exact JSON integer values and exact `integer(...)` text, no float conversion |
 | ENC-03 | H | Unexpected key `credentials`, missing required key, nested `body`, wrong timestamp type | Reject; no positive conformance receipt |
-| ENC-04 | H | Duplicate raw JSON member name (including escaped equivalent) | **OPEN**: `serde_json::Value` normalizes duplicate map names. A raw-key-unique parser is needed before this can be marked pass |
+| ENC-04 | H | Duplicate raw JSON member name (including escaped equivalent) | **PATCHED, NOT EXECUTED**: `UniqueRecord` rejects duplicate top-level keys before `Value` conversion. Escaped-key alias and trailing-object tests authored; requires stepful `cargo test --locked` receipt |
 | MET-01 | H+G | Valid counter delta, gauge negative value, histogram sample | Schema, kind, unit and signed integer fields agree; collector aggregation is not implied |
 | MET-02 | H; proposed G | Negative counter, unknown kind, missing metric value | Host validator must reject; native `metric` admission behavior remains to be specified and proved |
 | SPAN-01 | H+G | Root and child, explicit immutable parent/trace IDs | Nonempty unique span IDs, correct linkage, same trace, root parent empty |
@@ -47,3 +47,9 @@ ORES_JAVA="$JAVA_HOME/bin/java" ./scripts/check.sh
 For every completed case attach repository/PR/head SHA, Git tree SHA, compiler/runtime commit and tree, target backend, workflow run **and attempt**, job and its nonempty step ledger, exact stdout/stderr or a digest plus preserved artifact, exit status and expectation. Negative cases must fail for their intended reason; runner admission and compiler parse errors are not substitute oracles.
 
 Do not promote PR #13 or async PR #5 on a zero-step failure. PR #5 still depends on draft Java/Graal stdio PR #537. Current source-free runner-admission canary run `41166352071` failed with `steps=null`, which is infrastructure evidence only. `main` is not branch protected. No private compiler source is authorized for cross-organization transfer by this matrix.
+
+## Source-review note: Java/GraalVM main reconciliation (2026-10-31)
+
+Stacked Java PR #2349 at head `e28a7beba666b41e261426d3827a45d1ae46307f` is based on Java #537's old head `78aa824c75c0cddfb17dc1627158d1828e1bfac4`. Its ancestor is **3,783 commits behind Java main** on the 2026-10-31 compare result. Current main does **not** contain `AsyncStdioLogs.java` or `AsyncStdioLogsTest.java`, and its `OresContext.close()` has physical actor/native-I/O join and quarantine fences not present in #537.
+
+Do **not** copy the older `OresContext.close()` implementation or force-update main/parent. Reapply only the bounded async stdio addition after reconciling the current actor and native-I/O shutdown lifecycle, and retain quarantine on failed physical retirement. Re-run old and new regression suites against the *new* exact compiler head before pinning `SOURCE_REF` for OTel PR #5.
