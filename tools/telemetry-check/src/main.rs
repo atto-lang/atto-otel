@@ -444,14 +444,14 @@ mod tests {
             "name":"lifecycle", "duration_ns":0, "outcome":"ok",
             "http_status":200
         });
-        let good = format!("{event}\\n{span}\\nLIFECYCLE_OK");
+        let good = format!("{event}\n{span}\nLIFECYCLE_OK");
         assert!(super::check_span_lifecycle(&good).is_ok());
-        assert!(super::check_span_lifecycle(&format!("{event}\\n{span}\\n{span}\\nLIFECYCLE_OK")).is_err());
-        assert!(super::check_span_lifecycle(&format!("{event}\\n{span}\\n{event}\\nLIFECYCLE_OK")).is_err());
-        assert!(super::check_span_lifecycle(&format!("{event}\\n{span}\\nBAD_SECOND_FINISH")).is_err());
+        assert!(super::check_span_lifecycle(&format!("{event}\n{span}\n{span}\nLIFECYCLE_OK")).is_err());
+        assert!(super::check_span_lifecycle(&format!("{event}\n{span}\n{event}\nLIFECYCLE_OK")).is_err());
+        assert!(super::check_span_lifecycle(&format!("{event}\n{span}\nBAD_SECOND_FINISH")).is_err());
         let mut bad_span = span;
         bad_span["duration_ns"] = json!(1);
-        assert!(super::check_span_lifecycle(&format!("{event}\\n{bad_span}\\nLIFECYCLE_OK")).is_err());
+        assert!(super::check_span_lifecycle(&format!("{event}\n{bad_span}\nLIFECYCLE_OK")).is_err());
     }
 
     #[test]
