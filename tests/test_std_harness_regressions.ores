@@ -13,11 +13,24 @@ fnc newline_is_json_escaped(): TestOutcome {
   return expect_equal_string(otel.quote("a\nb"), "\"a\\nb\"",
     "newline must be escaped inside one JSON string token");
 }
+fnc warning_alias_has_same_rank(): TestOutcome {
+  return expect_equal_int(otel.severity_rank("WARN"),
+    otel.severity_rank("WARNING"), "WARN/WARNING aliases must have equal rank");
+}
+
+fnc high_severity_passes_lower_threshold(): TestOutcome {
+  return expect_true(otel.should_log("ERROR", "WARN")
+    && !otel.should_log("DEBUG", "WARN"),
+    "severity threshold must admit ERROR and reject DEBUG");
+}
+
 pub routine main(): void {
   val TestSuite suite = new TestSuite("otel", arr[
     new TestCase("unknown_severity_is_denied", unknown_severity_is_denied, false, ""),
     new TestCase("minimum_integer_is_lossless", minimum_integer_is_lossless, false, ""),
-    new TestCase("newline_is_json_escaped", newline_is_json_escaped, false, "")
+    new TestCase("newline_is_json_escaped", newline_is_json_escaped, false, ""),
+    new TestCase("warning_alias_has_same_rank", warning_alias_has_same_rank, false, ""),
+    new TestCase("high_severity_passes_lower_threshold", high_severity_passes_lower_threshold, false, "")
   ]);
   val TestOptions options = new TestOptions("", false, true);
   val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
