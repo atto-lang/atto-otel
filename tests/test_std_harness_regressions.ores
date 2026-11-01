@@ -24,13 +24,25 @@ fnc high_severity_passes_lower_threshold(): TestOutcome {
     "severity threshold must admit ERROR and reject DEBUG");
 }
 
+fnc off_threshold_suppresses_fatal_logs(): TestOutcome {
+  return expect_false(otel.should_log("FATAL", "OFF"),
+    "OFF must suppress even the highest valid severity");
+}
+
+fnc all_threshold_accepts_trace_logs(): TestOutcome {
+  return expect_true(otel.should_log("TRACE", "ALL"),
+    "ALL must admit the lowest valid severity");
+}
+
 pub routine main(): void {
   val TestSuite suite = new TestSuite("otel", arr[
     new TestCase("unknown_severity_is_denied", unknown_severity_is_denied, false, ""),
     new TestCase("minimum_integer_is_lossless", minimum_integer_is_lossless, false, ""),
     new TestCase("newline_is_json_escaped", newline_is_json_escaped, false, ""),
     new TestCase("warning_alias_has_same_rank", warning_alias_has_same_rank, false, ""),
-    new TestCase("high_severity_passes_lower_threshold", high_severity_passes_lower_threshold, false, "")
+    new TestCase("high_severity_passes_lower_threshold", high_severity_passes_lower_threshold, false, ""),
+    new TestCase("off_threshold_suppresses_fatal_logs", off_threshold_suppresses_fatal_logs, false, ""),
+    new TestCase("all_threshold_accepts_trace_logs", all_threshold_accepts_trace_logs, false, "")
   ]);
   val TestOptions options = new TestOptions("", false, true);
   val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
