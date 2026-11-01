@@ -1,0 +1,21 @@
+import class TestCase, TestSuite, TestOptions, TestOutcome, RunSummary from "std/testing";
+import fnc expect_true, expect_false, expect_equal_int, expect_equal_string, run_suite, require_success, fail from "std/testing";
+import module otel from "../src/otel";
+fnc unknown_severity_is_denied(): TestOutcome {
+  return expect_false(otel.should_log("CUSTOM", "INFO")
+    || otel.should_log("WARN", "CUSTOM"), "unknown severity or threshold must fail closed");
+}
+fnc minimum_integer_is_lossless(): TestOutcome {
+  return expect_equal_string(otel.integer(-9223372036854775807 - 1),
+    "-9223372036854775808", "i64 minimum must not overflow during decimal rendering");
+}
+pub routine main(): void {
+  val TestSuite suite = new TestSuite("otel", arr[
+    new TestCase("unknown_severity_is_denied", unknown_severity_is_denied, false, ""),
+    new TestCase("minimum_integer_is_lossless", minimum_integer_is_lossless, false, "")
+  ]);
+  val TestOptions options = new TestOptions("", false, true);
+  val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
+  require_success(rt borrow summary);
+  return;
+}
