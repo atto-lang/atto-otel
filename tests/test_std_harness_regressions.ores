@@ -9,10 +9,15 @@ fnc minimum_integer_is_lossless(): TestOutcome {
   return expect_equal_string(otel.integer(-9223372036854775807 - 1),
     "-9223372036854775808", "i64 minimum must not overflow during decimal rendering");
 }
+fnc newline_is_json_escaped(): TestOutcome {
+  return expect_equal_string(otel.quote("a\nb"), "\"a\\nb\"",
+    "newline must be escaped inside one JSON string token");
+}
 pub routine main(): void {
   val TestSuite suite = new TestSuite("otel", arr[
     new TestCase("unknown_severity_is_denied", unknown_severity_is_denied, false, ""),
-    new TestCase("minimum_integer_is_lossless", minimum_integer_is_lossless, false, "")
+    new TestCase("minimum_integer_is_lossless", minimum_integer_is_lossless, false, ""),
+    new TestCase("newline_is_json_escaped", newline_is_json_escaped, false, "")
   ]);
   val TestOptions options = new TestOptions("", false, true);
   val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
