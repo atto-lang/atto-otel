@@ -1,0 +1,51 @@
+import class TestCase, TestSuite, TestOptions, TestOutcome, RunSummary from "ores.std/testing";
+import fnc expect_true, expect_false, expect_equal_int, expect_equal_string, run_suite, require_success, fail from "ores.std/testing";
+import module otel from "../src/otel";
+fnc unknown_severity_is_denied(): TestOutcome {
+  return expect_false(otel.should_log("CUSTOM", "INFO")
+    || otel.should_log("WARN", "CUSTOM"), "unknown severity or threshold must fail closed");
+}
+fnc minimum_integer_is_lossless(): TestOutcome {
+  return expect_equal_string(otel.integer(-9223372036854775807 - 1),
+    "-9223372036854775808", "i64 minimum must not overflow during decimal rendering");
+}
+fnc newline_is_json_escaped(): TestOutcome {
+  return expect_equal_string(otel.quote("a\nb"), "\"a\\nb\"",
+    "newline must be escaped inside one JSON string token");
+}
+fnc warning_alias_has_same_rank(): TestOutcome {
+  return expect_equal_int(otel.severity_rank("WARN"),
+    otel.severity_rank("WARNING"), "WARN/WARNING aliases must have equal rank");
+}
+
+fnc high_severity_passes_lower_threshold(): TestOutcome {
+  return expect_true(otel.should_log("ERROR", "WARN")
+    && !otel.should_log("DEBUG", "WARN"),
+    "severity threshold must admit ERROR and reject DEBUG");
+}
+
+fnc off_threshold_suppresses_fatal_logs(): TestOutcome {
+  return expect_false(otel.should_log("FATAL", "OFF"),
+    "OFF must suppress even the highest valid severity");
+}
+
+fnc all_threshold_accepts_trace_logs(): TestOutcome {
+  return expect_true(otel.should_log("TRACE", "ALL"),
+    "ALL must admit the lowest valid severity");
+}
+
+pub routine main(): void {
+  val TestSuite suite = new TestSuite("otel", arr[
+    new TestCase("unknown_severity_is_denied", unknown_severity_is_denied, false, ""),
+    new TestCase("minimum_integer_is_lossless", minimum_integer_is_lossless, false, ""),
+    new TestCase("newline_is_json_escaped", newline_is_json_escaped, false, ""),
+    new TestCase("warning_alias_has_same_rank", warning_alias_has_same_rank, false, ""),
+    new TestCase("high_severity_passes_lower_threshold", high_severity_passes_lower_threshold, false, ""),
+    new TestCase("off_threshold_suppresses_fatal_logs", off_threshold_suppresses_fatal_logs, false, ""),
+    new TestCase("all_threshold_accepts_trace_logs", all_threshold_accepts_trace_logs, false, "")
+  ]);
+  val TestOptions options = new TestOptions("", false, true);
+  val RunSummary summary = run_suite(rt borrow suite, rt borrow options);
+  require_success(rt borrow summary);
+  return;
+}
