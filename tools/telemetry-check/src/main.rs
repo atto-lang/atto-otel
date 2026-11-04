@@ -142,7 +142,9 @@ fn run() -> Result<()> {
             return Err("captured guest stdout exceeds 1 MiB".into());
         }
         check_smoke(&String::from_utf8(bytes)?)?;
-        println!("PASS: captured guest smoke semantics (output only; compiler provenance NOT attested)");
+        println!(
+            "PASS: captured guest smoke semantics (output only; compiler provenance NOT attested)"
+        );
         return Ok(());
     }
     if args.len() != 1 {
