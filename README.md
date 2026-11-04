@@ -120,3 +120,25 @@ The compiler-launch host admission regression suite is implemented in Rust (no P
 It covers exact clean source revisions, invalid/floating pins, dirty and untracked
 files, and rejection of a nested directory masquerading as a Git checkout.
 These use isolated mock Java launchers; they do not certify guest compiler behavior.
+
+## Backend-independent smoke output oracle
+
+The native Java compiler launcher remains the default development check.
+An **output-only** verification mode now accepts captured standard output from
+an independently executed `tests/smoke.ores` guest:
+
+```sh
+cargo run --locked --manifest-path tools/telemetry-check/Cargo.toml -- \
+  --check-smoke-output path/to/captured-guest.jsonl
+```
+
+The verifier imposes a 1 MiB input limit, strict UTF-8/JSON parsing, exact
+record counts, severity filtering, span correlation, JSON control escaping,
+timestamp bounds and integer/metric observations. Additional semantic negative
+controls are covered by `cargo test --locked`. A passing output check is
+**not evidence that any backend compiled or executed the guest**: the caller
+must separately bind exact compiler SHA, target/runtime, command, exit status
+and raw stdout digest. Run the real fixture independently for Java JIT/AOT,
+LLVM native, WASM (Node or browser worker), Cranelift, .NET Native AOT and
+JavaScript transpilation. Backend support and portability remain unverified
+until actual executions complete; there is no model-output fallback.

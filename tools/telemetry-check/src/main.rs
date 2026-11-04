@@ -128,8 +128,27 @@ fn integers(root: &std::path::Path) -> Result<()> {
 }
 
 fn run() -> Result<()> {
-    if std::env::args_os().len() != 1 {
-        return Err("this check accepts no arguments".into());
+    let args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 3 && args[1].to_str() == Some("--check-smoke-output") {
+        // Output-only parity check: a caller must independently attest compiler
+        // revision, execution command, exit status, artifact hash, and target.
+        // Bound input before UTF-8 decoding even for pipes and special files.
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::fs::File::open(&args[2])?
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > 1024 * 1024 {
+            return Err("captured guest stdout exceeds 1 MiB".into());
+        }
+        check_smoke(&String::from_utf8(bytes)?)?;
+        println!(
+            "PASS: captured guest smoke semantics (output only; compiler provenance NOT attested)"
+        );
+        return Ok(());
+    }
+    if args.len() != 1 {
+        return Err("usage: checker [--check-smoke-output GUEST_STDOUT_FILE]".into());
     }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -195,6 +214,29 @@ mod tests {
                 .join("\n")
         };
         assert!(super::check_smoke(&encode(&rows)).is_ok());
+
+        // Same nine valid-looking records, with one tampered invariant each.
+        // These negative controls must reject the precise semantic corruption
+        // rather than passing because JSON parsing or counts failed.
+        let mut corrupt_trace = rows.clone();
+        corrupt_trace[0]["ores_trace_id"] = json!("other-trace");
+        assert!(super::check_smoke(&encode(&corrupt_trace)).is_err());
+        let mut corrupt_parent = rows.clone();
+        corrupt_parent[6]["parent_span_id"] = json!("wrong-parent");
+        assert!(super::check_smoke(&encode(&corrupt_parent)).is_err());
+        let mut corrupt_duration = rows.clone();
+        corrupt_duration[6]["duration_ns"] = json!(-1);
+        assert!(super::check_smoke(&encode(&corrupt_duration)).is_err());
+        let mut corrupt_metric = rows.clone();
+        corrupt_metric[8]["value"] = json!(2);
+        assert!(super::check_smoke(&encode(&corrupt_metric)).is_err());
+        let mut corrupt_log = rows.clone();
+        corrupt_log[0]["body"] = json!("unexpected");
+        assert!(super::check_smoke(&encode(&corrupt_log)).is_err());
+        let mut corrupt_timestamp = rows.clone();
+        corrupt_timestamp[0]["timestamp_unix_ms"] = json!(0);
+        assert!(super::check_smoke(&encode(&corrupt_timestamp)).is_err());
+
         let mut unknown = base;
         unknown["signal"] = json!("unexpected");
         rows.push(unknown);
