@@ -620,9 +620,9 @@ mod tests {
     #[test]
     fn decoded_json_field_names_cannot_hide_duplicate_schema_or_signal() {
         for raw in [
-            r#"{"schema":"oreslang-otel.v1","sch\\u0065ma":"forged"}"#,
-            r#"{"signal":"log","sign\\u0061l":"metric"}"#,
-            r#"{"ores_trace_id":"x","ores_trace_\\u0069d":"y"}"#,
+            r#"{"schema":"oreslang-otel.v1","sch\u0065ma":"forged"}"#,
+            r#"{"signal":"log","sign\u0061l":"metric"}"#,
+            r#"{"ores_trace_id":"x","ores_trace_\u0069d":"y"}"#,
         ] {
             assert!(super::parse_unique_json_line(raw).is_err(), "accepted duplicate: {raw}");
         }
