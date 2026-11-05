@@ -616,4 +616,36 @@ mod tests {
         span["timestamp_unix_ms"] = json!(0);
         assert!(super::check_record_schema(&span).is_err());
     }
+
+    #[test]
+    fn decoded_json_field_names_cannot_hide_duplicate_schema_or_signal() {
+        for raw in [
+            r#"{"schema":"oreslang-otel.v1","sch\u0065ma":"forged"}"#,
+            r#"{"signal":"log","sign\u0061l":"metric"}"#,
+            r#"{"ores_trace_id":"x","ores_trace_\u0069d":"y"}"#,
+        ] {
+            assert!(super::parse_unique_json_line(raw).is_err(), "accepted duplicate: {raw}");
+        }
+        // Independent field spelling is not falsely collapsed by the decoder.
+        assert!(super::parse_unique_json_line(
+            r#"{"schema":"one","Schema":"two"}"#
+        ).is_ok());
+    }
+
+    #[test]
+    fn numeric_timestamps_cannot_be_replaced_with_float_string_or_boolean() {
+        use serde_json::json;
+        let mut log = json!({
+            "schema":"oreslang-otel.v1", "signal":"log",
+            "timestamp_unix_ms":1, "service":"test",
+            "ores_trace_id":"trace", "span_id":"", "severity":"INFO", "body":""
+        });
+        assert!(super::check_record_schema(&log).is_ok());
+        for wrong in [json!(1.5), json!("1"), json!(true), json!(null), json!(-1)] {
+            log["timestamp_unix_ms"] = wrong;
+            assert!(super::check_record_schema(&log).is_err());
+        }
+        log["timestamp_unix_ms"] = json!(i64::MAX);
+        assert!(super::check_record_schema(&log).is_ok());
+    }
 }
