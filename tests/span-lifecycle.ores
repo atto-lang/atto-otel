@@ -7,6 +7,13 @@ pub routine main(): void {
     stdio.println("BAD_PRESTART");
     return;
   fi
+  // A forged minimum signed-i64 start must not overflow elapsed
+  // arithmetic or poison subsequent real span completion.
+  val old_span = otel.start_at("test", "ores-trace-lifecycle", "old-no-export", "", "old", -9223372036854775807 - 1);
+  if old_span.elapsed_ns() != 9223372036854775807; then
+    stdio.println("BAD_ELAPSED_OVERFLOW");
+    return;
+  fi
   span.event("INFO", "before-finish");
   if !span.finish("ok", 200); then
     stdio.println("BAD_FIRST_FINISH");
