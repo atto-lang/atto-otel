@@ -572,4 +572,48 @@ mod tests {
         metric["kind"] = json!("unrecognized");
         assert!(super::check_record_schema(&metric).is_err());
     }
+
+    #[test]
+    fn metric_i64_endpoints_preserve_signed_counter_authority() {
+        use serde_json::json;
+        let mut metric = json!({
+            "schema":"oreslang-otel.v1", "signal":"metric",
+            "timestamp_unix_ms":i64::MAX, "service":"test",
+            "ores_trace_id":"edge-identity", "name":"signed-count",
+            "kind":"counter", "unit":"1", "value":i64::MAX
+        });
+        assert!(super::check_record_schema(&metric).is_ok());
+        metric["value"] = json!(-1);
+        assert!(super::check_record_schema(&metric).is_err());
+        metric["kind"] = json!("gauge");
+        assert!(super::check_record_schema(&metric).is_ok());
+        metric["value"] = json!(i64::MIN);
+        assert!(super::check_record_schema(&metric).is_ok());
+        metric["value"] = json!("9223372036854775808");
+        assert!(super::check_record_schema(&metric).is_err());
+    }
+
+    #[test]
+    fn span_http_and_duration_boundaries_are_not_clamped() {
+        use serde_json::json;
+        let mut span = json!({
+            "schema":"oreslang-otel.v1", "signal":"span",
+            "timestamp_unix_ms":1, "service":"test",
+            "ores_trace_id":"span-edge", "span_id":"s",
+            "parent_span_id":"", "name":"edge",
+            "duration_ns":i64::MAX, "outcome":"ok", "http_status":599
+        });
+        assert!(super::check_record_schema(&span).is_ok());
+        span["http_status"] = json!(600);
+        assert!(super::check_record_schema(&span).is_err());
+        span["http_status"] = json!(-1);
+        assert!(super::check_record_schema(&span).is_err());
+        span["http_status"] = json!(0);
+        span["duration_ns"] = json!(i64::MIN);
+        assert!(super::check_record_schema(&span).is_err());
+        span["duration_ns"] = json!(0);
+        assert!(super::check_record_schema(&span).is_ok());
+        span["timestamp_unix_ms"] = json!(0);
+        assert!(super::check_record_schema(&span).is_err());
+    }
 }
