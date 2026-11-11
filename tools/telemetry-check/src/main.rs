@@ -96,6 +96,55 @@ fn check_smoke(text: &str) -> Result<()> {
     return Ok(());
 }
 
+
+/**
+ * Semantic oracle for the real native Oreslang guest:
+ *   tests/span-finish-admission-retry.ores
+ *
+ * A deliberate >65,536-byte record must fail synchronously without
+ * committing the live span's state. The same span then emits one valid
+ * completion, and repeated finish/event calls cannot create duplicates.
+ * This checks output only; the caller separately attests compiler execution.
+ */
+fn check_finish_admission_retry(text: &str) -> Result<()> {
+    if text.len() > 4096 {
+        return Err("span retry guest produced excessive output".into());
+    }
+    let lines: Vec<_> = text.lines().collect();
+    if lines.len() != 1 {
+        return Err("expected exactly one admitted completion after rejected enqueue".into());
+    }
+    let row: Value = serde_json::from_str(lines[0])?;
+    let fields = [
+        "schema", "signal", "timestamp_unix_ms", "service", "ores_trace_id",
+        "span_id", "parent_span_id", "name", "duration_ns", "outcome", "http_status"
+    ];
+    let object = row.as_object().ok_or("span retry record is not an object")?;
+    if object.len() != fields.len() || !fields.iter().all(|key| object.contains_key(*key)) {
+        return Err("missing or unexpected span retry field".into());
+    }
+    if row["schema"] != "oreslang-otel.v1"
+        || row["signal"] != "span"
+        || row["service"] != "retry-test"
+        || row["ores_trace_id"] != "ores-trace-retry"
+        || row["parent_span_id"] != ""
+        || row["name"] != "admission-retry"
+        || row["outcome"] != "ok"
+        || row["http_status"].as_i64() != Some(200)
+    {
+        return Err("wrong span retry identity or successful completion".into());
+    }
+    if !row["span_id"].as_str().is_some_and(|id| !id.is_empty()) {
+        return Err("retry span has no generated id".into());
+    }
+    if row["timestamp_unix_ms"].as_i64().unwrap_or(0) <= 1700000000000
+        || row["duration_ns"].as_i64().is_none_or(|ns| ns < 0)
+    {
+        return Err("invalid timestamp or elapsed duration for span retry".into());
+    }
+    Ok(())
+}
+
 fn integers(root: &std::path::Path) -> Result<()> {
     let mut values = vec![
         i64::MIN,
@@ -152,6 +201,25 @@ fn integers(root: &std::path::Path) -> Result<()> {
 }
 
 fn run() -> Result<()> {
+    let args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 3 && args[1].to_str() == Some("--check-finish-retry-output") {
+        // This mode validates ONLY externally captured output; never claim
+        // compiler provenance or real guest execution from a file alone.
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::fs::File::open(&args[2])?
+            .take(4097)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > 4096 {
+            return Err("span retry capture exceeds 4096 bytes".into());
+        }
+        check_finish_admission_retry(&String::from_utf8(bytes)?)?;
+        println!("PASS: span finish retry semantics; OUTPUT_ONLY_NOT_GUEST_ATTESTED");
+        return Ok(());
+    }
+    if args.len() != 1 {
+        return Err("usage: checker [--check-finish-retry-output GUEST_JSONL]".into());
+    }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -162,9 +230,10 @@ fn run() -> Result<()> {
     println!(
         "PASS: native spans, correlation, idempotence, JSON escaping, int64 and severity gating"
     );
-    if std::env::args_os().len() != 1 {
-        return Err("this check accepts no arguments".into());
-    }
+    check_finish_admission_retry(&execute(
+        &root, &root.join("tests/span-finish-admission-retry.ores")
+    )?)?;
+    println!("PASS: native span finish admission retry; oversized enqueue did not end span");
     integers(&root)?;
     return Ok(());
 }
@@ -178,6 +247,45 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn span_finish_retry_oracle_accepts_one_valid_completion_and_rejects_tampering() {
+        use serde_json::{json, Value};
+        let good = json!({
+            "schema":"oreslang-otel.v1", "signal":"span",
+            "timestamp_unix_ms":1700000000001_i64,
+            "service":"retry-test", "ores_trace_id":"ores-trace-retry",
+            "span_id":"generated-id", "parent_span_id":"",
+            "name":"admission-retry", "duration_ns":20_i64,
+            "outcome":"ok", "http_status":200
+        });
+        let check = |v: Value| super::check_finish_admission_retry(&v.to_string());
+        assert!(check(good.clone()).is_ok(), "single accepted span record");
+        for (key, value) in [
+            ("schema", json!("other")),
+            ("signal", json!("log")),
+            ("service", json!("wrong")),
+            ("ores_trace_id", json!("other")),
+            ("span_id", json!("")),
+            ("outcome", json!("oversized")),
+            ("http_status", json!(503)),
+            ("duration_ns", json!(-1)),
+            ("timestamp_unix_ms", json!(0)),
+        ] {
+            let mut damaged = good.clone();
+            damaged[key] = value;
+            assert!(check(damaged).is_err(), "invalid field {key}");
+        }
+        let mut extra = good.clone();
+        extra["body"] = json!("data must not be leaked");
+        assert!(check(extra).is_err());
+        assert!(super::check_finish_admission_retry("").is_err());
+        assert!(super::check_finish_admission_retry("{}").is_err());
+        assert!(super::check_finish_admission_retry(
+            &format!("{}\n{}", good, good)).is_err(), "no duplicate completions");
+        assert!(super::check_finish_admission_retry(
+            &"x".repeat(4097)).is_err(), "strict capture budget");
+    }
+
     #[test]
     fn malformed_or_incomplete_records_fail_closed() {
         assert!(super::check_smoke("{broken}").is_err());
