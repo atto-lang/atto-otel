@@ -146,7 +146,7 @@ and explicitly **do not attest compiler execution**.
 
 `SOURCE_REF` was repinned to the actual Java async-stdio integration draft
 [Java PR #2353](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/2353)
-at exact head `93d4cfe7f888dc54645f43b56b9dc6ba4b926e5f`.
+at exact head `d5aaaaf61d4f668ddcb8b8a39ca9bc342da7a96d`.
 That Java draft includes an exact-blob, private-same-org snapshot of the
 updated async OTel source, both guest fixtures and the original Rust checker,
 plus a **real JVM and Native Image guest workflow**
@@ -165,3 +165,31 @@ private source: mainline branch protection and independent CODEOWNER/security
 review are still outstanding (Java issues #963 and #1501). Keep both drafts
 unmerged and do not promote five-backend parity or OTLP readiness from the
 source-only evidence.
+
+## 2026-11-11 strict JSON oracle and bounded guest evidence
+
+The original Rust checker now uses a recursive `serde` deserializer that
+rejects duplicate JSON keys **before** converting to `serde_json::Value`.
+This corrects the previous last-wins parser behavior, which could silently
+allow duplicated `signal`, `body`, `ores_trace_id` or nested properties.
+Unit fixtures cover escaped-equivalent key names and nested object/array
+duplicates as well as valid signed-i64 JSON. `Cargo.toml` and `Cargo.lock`
+now explicitly pin `serde` alongside `serde_json`.
+
+The changed Rust source and both Cargo files were copied **byte-for-byte
+within the same private source organization** to Java async-stdio PR #2353
+and cross-checked using Git blob hashes:
+
+- `tools/telemetry-check/src/main.rs`: `baee942bd7860cd327d34b6c4ab78c03f21cd0ba`
+- `tools/telemetry-check/Cargo.toml`: `55fbd9508b735d0248c80339234cd82eb533275a`
+- `tools/telemetry-check/Cargo.lock`: `cc5a82761a5188f1a2ed4f9ec67e566ddfed7f45`
+
+The pinned Java guest harness removes all stale/partial success receipts on
+an unsuccessful invocation; a disposable source-free Git-repo regression
+confirmed the actual shell launcher fails closed and deletes both injected
+stale receipts when a required source blob is absent. The exact updated Bash
+files passed local Linux syntax and adverse subprocess checks. The **Rust
+unit tests, Java JUnit tests, native Oreslang .ores programs and Native
+Image interpreter host have NOT executed on these exact heads** because
+private source-org GitHub Actions still fails before any runner/step admission.
+Do not claim full OTel or cross-backend parity or merge these drafts.
