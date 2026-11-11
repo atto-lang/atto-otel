@@ -202,6 +202,20 @@ fn integers(root: &std::path::Path) -> Result<()> {
 
 fn run() -> Result<()> {
     let args: Vec<_> = std::env::args_os().collect();
+    if args.len() == 3 && args[1].to_str() == Some("--check-smoke-output") {
+        // Only semantic output validation, never proof of the compiler process.
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::fs::File::open(&args[2])?
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > 1024 * 1024 {
+            return Err("smoke capture exceeds 1 MiB".into());
+        }
+        check_smoke(&String::from_utf8(bytes)?)?;
+        println!("PASS: smoke JSONL semantics; OUTPUT_ONLY_NOT_GUEST_ATTESTED");
+        return Ok(());
+    }
     if args.len() == 3 && args[1].to_str() == Some("--check-finish-retry-output") {
         // This mode validates ONLY externally captured output; never claim
         // compiler provenance or real guest execution from a file alone.
@@ -218,7 +232,7 @@ fn run() -> Result<()> {
         return Ok(());
     }
     if args.len() != 1 {
-        return Err("usage: checker [--check-finish-retry-output GUEST_JSONL]".into());
+        return Err("usage: checker [--check-smoke-output GUEST_JSONL | --check-finish-retry-output GUEST_JSONL]".into());
     }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
