@@ -146,14 +146,17 @@ define module otel as
     // Actor-local mutation makes completion idempotent; never share a live Span.
     pub finish(mut self)(String outcome, int http_status): bool {
       if self.ended; then return false; fi
-      self.duration = self.elapsed_ns();
-      self.ended = true;
-      val int duration = self.duration;
+      // The bounded async sink can reject records synchronously.
+      // Preserve a retryable live span until its completion record is admitted.
+      // Queue admission is not physical delivery; flush/close report sink errors.
+      val int duration = self.elapsed_ns();
       stdio.stdout.log_async("{\"schema\":\"oreslang-otel.v1\",\"signal\":\"span\",\"timestamp_unix_ms\":" + integer(process.unix_ms())
         + ",\"service\":" + quote(self.service) + ",\"ores_trace_id\":" + quote(self.trace)
         + ",\"span_id\":" + quote(self.id) + ",\"parent_span_id\":" + quote(self.parent)
         + ",\"name\":" + quote(self.name) + ",\"duration_ns\":" + integer(duration)
         + ",\"outcome\":" + quote(outcome) + ",\"http_status\":" + integer(http_status) + "}");
+      self.duration = duration;
+      self.ended = true;
       return true;
     }
   end
