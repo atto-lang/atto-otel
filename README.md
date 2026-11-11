@@ -122,3 +122,46 @@ it does not trust incoming correlation headers or imply cross-service tracing.
 Integer encoding stays in native Oreslang. Digit selection uses at most four exact comparisons/subtractions per nonzero decimal position, without floating-point division or a Java formatter. The required core runtime preserves signed int64 ordering beyond 2^53.
 
 The Rust checker replaces tests/check.py and independently parses actual Oreslang output. It retains all smoke checks for correlation, escaping, idempotence and severity gating, then checks 215 decimal boundaries and deterministic random int64 samples against Rust integer formatting. Run `cargo test --locked --manifest-path tools/telemetry-check/Cargo.toml` for malformed-record rejection checks.
+
+
+## Async completion retry safety and current compiler integration (2026-11-11)
+
+The async OTel draft now **commits `Span.finish()` only after the bounded
+`stdio.stdout.log_async` call admits its JSONL record**. Previously the
+span was marked ended before enqueue, so an oversized record or a full queue
+could permanently discard its completion and prevent retry. The new behavior
+preserves a live, retryable span if **synchronous admission** fails.
+An admitted record still requires a successful output drain/flush for
+delivery, and is not crash durable.
+
+New native guest `tests/span-finish-admission-retry.ores` constructs a
+131,072-byte outcome deterministically. The bounded writer must reject it
+(65,536-byte record limit); the guest catches the rejection, retries
+`finish("ok", 200)` on the same span, requires that a second finish returns
+false, and explicitly awaits `stdio.flush_async_logs()`. No fake telemetry
+output is generated. `tools/telemetry-check` now validates exactly one
+valid retry span record and rejects hostile field/count mutations; output-only
+`--check-finish-retry-output` and `--check-smoke-output` modes cap input
+and explicitly **do not attest compiler execution**.
+
+`SOURCE_REF` was repinned to the actual Java async-stdio integration draft
+[Java PR #2353](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/2353)
+at exact head `69fd6e17c85df890951aa8d351f4885b2cc0b8b1`.
+That Java draft includes an exact-blob, private-same-org snapshot of the
+updated async OTel source, both guest fixtures and the original Rust checker,
+plus a **real JVM and Native Image guest workflow**
+`.github/workflows/otel-async-native-guest.yml`.
+The workflow requires the real Oreslang compiler and original Rust semantic
+checks, not simulated output. The Native Image is a native AOT **host** with
+an interpreted Oreslang guest, not standalone compiled Oreslang machine code.
+
+**Current status is SOURCE/TESTS COMMITTED, GUEST NOT EXECUTED / NOT CERTIFIED.**
+Local Linux Bash guardrail negative tests passed against exact Git blobs, but
+the source organization's private GitHub Actions runners are still not
+admitting Java jobs. No Maven/JUnit, native Oreslang JVM guest, Native Image
+guest or Rust unit results have been obtained at the new PR head. The
+external source-free GraalVM capacity probe is *not* authorized to receive
+private source: mainline branch protection and independent CODEOWNER/security
+review are still outstanding (Java issues #963 and #1501). Keep both drafts
+unmerged and do not promote five-backend parity or OTLP readiness from the
+source-only evidence.
