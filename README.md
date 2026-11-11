@@ -146,7 +146,7 @@ and explicitly **do not attest compiler execution**.
 
 `SOURCE_REF` was repinned to the actual Java async-stdio integration draft
 [Java PR #2353](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/2353)
-at exact head `69fd6e17c85df890951aa8d351f4885b2cc0b8b1`.
+at exact head `93d4cfe7f888dc54645f43b56b9dc6ba4b926e5f`.
 That Java draft includes an exact-blob, private-same-org snapshot of the
 updated async OTel source, both guest fixtures and the original Rust checker,
 plus a **real JVM and Native Image guest workflow**
