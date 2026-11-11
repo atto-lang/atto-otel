@@ -32,5 +32,8 @@ pub routine main(): void {
   if !span.finish("ok", 200); then panic("span was finalized on rejected enqueue"); fi
   if span.finish("duplicate", 503); then panic("successful finish was not idempotent"); fi
   span.event("INFO", "ignored after admitted finish");
+  // This checkpoint is awaited so the oracle sees a physically flushed
+  // record, not just a successful admission into the bounded queue.
+  await stdio.flush_async_logs();
   return;
 }
