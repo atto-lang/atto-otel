@@ -37,3 +37,9 @@ This describes intended scope, not a verified feature matrix. Consult the source
 AttoLang is the public name; preserve existing Oreslang/.ores compatibility and use canonical .atto for new portable library source. This README defines scope, not feature readiness.
 
 **Acceptance:** name exact source SHA/tree, runtime/toolchain, positive and negative checks and execution receipt before claiming support. Host-only tests and empty CI steps do not prove guest execution.
+
+## W3C trace context v00 (host reference only)
+
+A small, dependency-free `reference/trace_context.py` parses and formats 55-character W3C `traceparent` version-00 headers and exposes the sampled flag. Rejects all-zero trace/span IDs, uppercase/non-hex input, unsupported versions and invalid flag widths. Use `python3 -m unittest discover -s tests -v` to validate the reference behavior.
+
+This does not implement Atto actor context propagation, OTLP export, metrics or logging, and it makes no guest-execution claim. Follow-up backend adapters must ensure tenant boundaries do not leak trace data.
