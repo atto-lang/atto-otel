@@ -1,0 +1,20 @@
+name: OTel source-free runner admission canary
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/otel-runner-admission.yml'
+      - '.github/workflows/host-contracts.yml'
+      - 'tools/telemetry-check/**'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  canary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Prove runner was admitted and executed a step
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'OTEL_SOURCE_FREE_RUNNER_ADMITTED=1\n'
+          printf 'This checks runner allocation only; no source checkout or guest execution.\n'

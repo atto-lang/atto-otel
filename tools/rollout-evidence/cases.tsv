@@ -1,0 +1,4 @@
+telemetry-encoding	java	execution
+span-lifecycle	java	execution
+export-backpressure	java	execution
+negative-admission	java	rejection
