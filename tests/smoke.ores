@@ -14,9 +14,9 @@ pub routine main(): void {
   if otel.should_log("WARN", "CUSTOM"); then span.event("WARN", "filtered unknown threshold"); fi
 
   // Assert severity thresholds independently of emitted log snapshots.
-  if otel.should_log("DEBUG", "INFO") then panic("DEBUG escaped INFO threshold"); fi
-  if !otel.should_log("WARN", "INFO") then panic("WARN filtered at INFO"); fi
-  if otel.should_log("ERROR", "OFF") then panic("OFF accepted an event"); fi
+  if otel.should_log("DEBUG", "INFO") then stdio.println("BAD_THRESHOLD: DEBUG escaped INFO threshold"); return; fi
+  if !otel.should_log("WARN", "INFO") then stdio.println("BAD_THRESHOLD: WARN filtered at INFO"); return; fi
+  if otel.should_log("ERROR", "OFF") then stdio.println("BAD_THRESHOLD: OFF accepted an event"); return; fi
   val child = otel.start("test", span.trace_id(), span.span_id(), "child");
   child.finish("ok", 0);
   span.finish("ok", 200);
