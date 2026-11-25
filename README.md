@@ -49,3 +49,9 @@ AttoLang is the canonical project name; new source, examples and documentation u
 A small, dependency-free `reference/trace_context.py` parses and formats 55-character W3C `traceparent` version-00 headers and exposes the sampled flag. Rejects all-zero trace/span IDs, uppercase/non-hex input, unsupported versions and invalid flag widths. Use `python3 -m unittest discover -s tests -v` to validate the reference behavior.
 
 This does not implement Atto actor context propagation, OTLP export, metrics or logging, and it makes no guest-execution claim. Follow-up backend adapters must ensure tenant boundaries do not leak trace data.
+
+## Legacy provenance and transfer verification
+
+The historical predecessor, `ores-truffle-oreslang/oreslang-otel`, is archived; the current `atto-lang/atto-otel` has a separate numeric GitHub repository ID. Preserve supported legacy `.ores` inputs and package/CLI/API aliases until canonical `.atto` replacements are verified. Portable OpenTelemetry tracing, logging, metric APIs and propagation contracts belong here, not production observability SaaS, log retention or cloud account administration.
+
+[atto-lang](https://github.com/atto-lang) owns language and portable tooling; [atto-co](https://github.com/atto-co) separately governs managed infrastructure, tenant hosting, identity and billing. Any future original-ID transfer or commercial carve-out requires separate owner authorization and independent security review. Inventory exact SHA/tree, numeric ID, access, protections, PRs, releases, packages, runners, secrets, deploy keys, apps, webhooks, Pages, consumers and rollback ownership; verify identity and retest after an authorized transfer. Never mirror private source without authorization. Zero-step jobs are NOT_EXECUTED; host/static checks are not compiled guest evidence or production safety proof.
