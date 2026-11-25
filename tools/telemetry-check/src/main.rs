@@ -5,6 +5,11 @@ use std::{error::Error, fmt, path::PathBuf, process::Command};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+// Host-side telemetry verifier admission budgets. Guest stdout is captured by
+// execute() before validation, so these are parsing limits, not process quotas.
+const MAX_TELEMETRY_LINE_BYTES: usize = 16 * 1024;
+const MAX_TELEMETRY_CAPTURE_BYTES: usize = 1024 * 1024;
+
 fn execute(root: &std::path::Path, source: &std::path::Path) -> Result<String> {
     let output = Command::new(root.join("scripts/compiler.sh"))
         .arg(source)
@@ -60,6 +65,9 @@ impl<'de> Deserialize<'de> for UniqueRecord {
 }
 
 fn parse_unique_json_line(line: &str) -> Result<Value> {
+    if line.len() > MAX_TELEMETRY_LINE_BYTES {
+        return Err("telemetry JSONL row exceeds 16 KiB".into());
+    }
     let mut decoder = serde_json::Deserializer::from_str(line);
     let record = UniqueRecord::deserialize(&mut decoder)?;
     decoder.end()?;
@@ -126,6 +134,14 @@ fn check_record_schema(row: &Value) -> Result<()> {
         "log" => {
             required_string("span_id", true)?;
             required_string("severity", false)?;
+            // Opaque user text cannot masquerade as a recognized telemetry
+            // severity. The guest log() API may still be unconditional.
+            let level = row["severity"].as_str().ok_or("invalid log severity")?;
+            if !["TRACE", "DEBUG", "INFO", "WARN", "WARNING", "ERROR", "FATAL"]
+                .contains(&level)
+            {
+                return Err("unrecognized log severity".into());
+            }
             required_string("body", true)?;
         }
         "span" => {
@@ -160,6 +176,9 @@ fn check_record_schema(row: &Value) -> Result<()> {
 }
 
 fn check_smoke(text: &str) -> Result<()> {
+    if text.len() > MAX_TELEMETRY_CAPTURE_BYTES {
+        return Err("telemetry smoke output exceeds 1 MiB".into());
+    }
     let rows = text
         .lines()
         .map(parse_unique_json_line)
@@ -222,6 +241,13 @@ fn check_smoke(text: &str) -> Result<()> {
             return Err(format!("incorrect log body: {}", log["body"]).into());
         }
     }
+    // A matching trace ID alone does not prove request-span or service attribution.
+    if logs.iter().any(|r| r["span_id"] != spans[1]["span_id"]
+                           || r["service"] != spans[1]["service"])
+        || metrics[0]["service"] != spans[1]["service"]
+    {
+        return Err("telemetry span/service attribution mismatch".into());
+    }
     if metrics[0]["name"] != "requests"
         || metrics[0]["kind"] != "counter"
         || metrics[0]["unit"] != "1"
@@ -234,6 +260,9 @@ fn check_smoke(text: &str) -> Result<()> {
 
 
 fn check_span_lifecycle(text: &str) -> Result<()> {
+    if text.len() > MAX_TELEMETRY_CAPTURE_BYTES {
+        return Err("telemetry lifecycle output exceeds 1 MiB".into());
+    }
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() != 3 || lines[2] != "LIFECYCLE_OK" {
         return Err("span lifecycle guest did not finish with exact receipt and two JSONL rows".into());
@@ -368,6 +397,19 @@ fn main() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn jsonl_verifier_rejects_oversized_records_before_parsing() {
+        let big = "x".repeat(super::MAX_TELEMETRY_LINE_BYTES + 1);
+        assert!(super::parse_unique_json_line(&big).is_err());
+        // The byte limit is UTF-8, not a permissive count of Unicode scalars.
+        let multibyte = "é".repeat(super::MAX_TELEMETRY_LINE_BYTES / 2 + 1);
+        assert!(super::parse_unique_json_line(&multibyte).is_err());
+        assert!(super::check_smoke(&big.repeat(65)).is_err());
+        assert!(super::check_span_lifecycle(&big.repeat(65)).is_err());
+        let short = r#"{"schema":"oreslang-otel.v1","signal":"metric"}"#;
+        assert!(super::parse_unique_json_line(short).is_ok());
+    }
+
+    #[test]
     fn smoke_rejects_unrecognized_extra_telemetry_records() {
         use serde_json::json;
         let base = json!({"schema":"oreslang-otel.v1", "ores_trace_id":"ores-trace-test",
@@ -430,6 +472,15 @@ mod tests {
         let mut corrupt_parent = rows.clone();
         corrupt_parent[6]["parent_span_id"] = json!("wrong-parent");
         assert!(super::check_smoke(&encode(&corrupt_parent)).is_err());
+        let mut foreign_span = rows.clone();
+        foreign_span[0]["span_id"] = json!("foreign-span");
+        assert!(super::check_smoke(&encode(&foreign_span)).is_err());
+        let mut foreign_service = rows.clone();
+        foreign_service[2]["service"] = json!("foreign-service");
+        assert!(super::check_smoke(&encode(&foreign_service)).is_err());
+        let mut metric_service = rows.clone();
+        metric_service[8]["service"] = json!("foreign-service");
+        assert!(super::check_smoke(&encode(&metric_service)).is_err());
         let mut corrupt_duration = rows.clone();
         corrupt_duration[6]["duration_ns"] = json!(-1);
         assert!(super::check_smoke(&encode(&corrupt_duration)).is_err());
@@ -616,4 +667,58 @@ mod tests {
         span["timestamp_unix_ms"] = json!(0);
         assert!(super::check_record_schema(&span).is_err());
     }
+
+    #[test]
+    fn decoded_json_field_names_cannot_hide_duplicate_schema_or_signal() {
+        for raw in [
+            r#"{"schema":"oreslang-otel.v1","sch\u0065ma":"forged"}"#,
+            r#"{"signal":"log","sign\u0061l":"metric"}"#,
+            r#"{"ores_trace_id":"x","ores_trace_\u0069d":"y"}"#,
+        ] {
+            assert!(super::parse_unique_json_line(raw).is_err(), "accepted duplicate: {raw}");
+        }
+        // Independent field spelling is not falsely collapsed by the decoder.
+        assert!(super::parse_unique_json_line(
+            r#"{"schema":"one","Schema":"two"}"#
+        ).is_ok());
+    }
+
+    #[test]
+    fn numeric_timestamps_cannot_be_replaced_with_float_string_or_boolean() {
+        use serde_json::json;
+        let mut log = json!({
+            "schema":"oreslang-otel.v1", "signal":"log",
+            "timestamp_unix_ms":1, "service":"test",
+            "ores_trace_id":"trace", "span_id":"", "severity":"INFO", "body":""
+        });
+        assert!(super::check_record_schema(&log).is_ok());
+        for wrong in [json!(1.5), json!("1"), json!(true), json!(null), json!(-1)] {
+            log["timestamp_unix_ms"] = wrong;
+            assert!(super::check_record_schema(&log).is_err());
+        }
+        log["timestamp_unix_ms"] = json!(i64::MAX);
+        assert!(super::check_record_schema(&log).is_ok());
+    }
+    #[test]
+    fn log_severity_is_exact_and_does_not_accept_threshold_tokens() {
+        use serde_json::json;
+        let mut log = json!({
+            "schema":"oreslang-otel.v1", "signal":"log",
+            "timestamp_unix_ms":1700000000001_i64,
+            "service":"test", "ores_trace_id":"trace",
+            "span_id":"", "severity":"INFO", "body":""
+        });
+        for valid in ["TRACE","DEBUG","INFO","WARN","WARNING","ERROR","FATAL"] {
+            log["severity"] = json!(valid);
+            assert!(super::check_record_schema(&log).is_ok(), "{valid}");
+        }
+        for invalid in ["", "all", "ALL", "OFF", "info", "WARN ", "FATAL\\n", "unknown"] {
+            log["severity"] = json!(invalid);
+            assert!(super::check_record_schema(&log).is_err(), "{invalid}");
+        }
+        log["severity"] = json!(7);
+        assert!(super::check_record_schema(&log).is_err());
+    }
+
+
 }
