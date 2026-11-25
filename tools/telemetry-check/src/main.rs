@@ -134,6 +134,14 @@ fn check_record_schema(row: &Value) -> Result<()> {
         "log" => {
             required_string("span_id", true)?;
             required_string("severity", false)?;
+            // Opaque user text cannot masquerade as a recognized telemetry
+            // severity. The guest log() API may still be unconditional.
+            let level = row["severity"].as_str().ok_or("invalid log severity")?;
+            if !["TRACE", "DEBUG", "INFO", "WARN", "WARNING", "ERROR", "FATAL"]
+                .contains(&level)
+            {
+                return Err("unrecognized log severity".into());
+            }
             required_string("body", true)?;
         }
         "span" => {
@@ -675,4 +683,26 @@ mod tests {
         log["timestamp_unix_ms"] = json!(i64::MAX);
         assert!(super::check_record_schema(&log).is_ok());
     }
+    #[test]
+    fn log_severity_is_exact_and_does_not_accept_threshold_tokens() {
+        use serde_json::json;
+        let mut log = json!({
+            "schema":"oreslang-otel.v1", "signal":"log",
+            "timestamp_unix_ms":1700000000001_i64,
+            "service":"test", "ores_trace_id":"trace",
+            "span_id":"", "severity":"INFO", "body":""
+        });
+        for valid in ["TRACE","DEBUG","INFO","WARN","WARNING","ERROR","FATAL"] {
+            log["severity"] = json!(valid);
+            assert!(super::check_record_schema(&log).is_ok(), "{valid}");
+        }
+        for invalid in ["", "all", "ALL", "OFF", "info", "WARN ", "FATAL\\n", "unknown"] {
+            log["severity"] = json!(invalid);
+            assert!(super::check_record_schema(&log).is_err(), "{invalid}");
+        }
+        log["severity"] = json!(7);
+        assert!(super::check_record_schema(&log).is_err());
+    }
+
+
 }
