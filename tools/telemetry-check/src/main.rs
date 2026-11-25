@@ -241,6 +241,13 @@ fn check_smoke(text: &str) -> Result<()> {
             return Err(format!("incorrect log body: {}", log["body"]).into());
         }
     }
+    // A matching trace ID alone does not prove request-span or service attribution.
+    if logs.iter().any(|r| r["span_id"] != spans[1]["span_id"]
+                           || r["service"] != spans[1]["service"])
+        || metrics[0]["service"] != spans[1]["service"]
+    {
+        return Err("telemetry span/service attribution mismatch".into());
+    }
     if metrics[0]["name"] != "requests"
         || metrics[0]["kind"] != "counter"
         || metrics[0]["unit"] != "1"
@@ -465,6 +472,15 @@ mod tests {
         let mut corrupt_parent = rows.clone();
         corrupt_parent[6]["parent_span_id"] = json!("wrong-parent");
         assert!(super::check_smoke(&encode(&corrupt_parent)).is_err());
+        let mut foreign_span = rows.clone();
+        foreign_span[0]["span_id"] = json!("foreign-span");
+        assert!(super::check_smoke(&encode(&foreign_span)).is_err());
+        let mut foreign_service = rows.clone();
+        foreign_service[2]["service"] = json!("foreign-service");
+        assert!(super::check_smoke(&encode(&foreign_service)).is_err());
+        let mut metric_service = rows.clone();
+        metric_service[8]["service"] = json!("foreign-service");
+        assert!(super::check_smoke(&encode(&metric_service)).is_err());
         let mut corrupt_duration = rows.clone();
         corrupt_duration[6]["duration_ns"] = json!(-1);
         assert!(super::check_smoke(&encode(&corrupt_duration)).is_err());
