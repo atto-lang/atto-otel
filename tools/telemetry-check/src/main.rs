@@ -5,6 +5,11 @@ use std::{error::Error, fmt, path::PathBuf, process::Command};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+// Host-side telemetry verifier admission budgets. Guest stdout is captured by
+// execute() before validation, so these are parsing limits, not process quotas.
+const MAX_TELEMETRY_LINE_BYTES: usize = 16 * 1024;
+const MAX_TELEMETRY_CAPTURE_BYTES: usize = 1024 * 1024;
+
 fn execute(root: &std::path::Path, source: &std::path::Path) -> Result<String> {
     let output = Command::new(root.join("scripts/compiler.sh"))
         .arg(source)
@@ -60,6 +65,9 @@ impl<'de> Deserialize<'de> for UniqueRecord {
 }
 
 fn parse_unique_json_line(line: &str) -> Result<Value> {
+    if line.len() > MAX_TELEMETRY_LINE_BYTES {
+        return Err("telemetry JSONL row exceeds 16 KiB".into());
+    }
     let mut decoder = serde_json::Deserializer::from_str(line);
     let record = UniqueRecord::deserialize(&mut decoder)?;
     decoder.end()?;
@@ -160,6 +168,9 @@ fn check_record_schema(row: &Value) -> Result<()> {
 }
 
 fn check_smoke(text: &str) -> Result<()> {
+    if text.len() > MAX_TELEMETRY_CAPTURE_BYTES {
+        return Err("telemetry smoke output exceeds 1 MiB".into());
+    }
     let rows = text
         .lines()
         .map(parse_unique_json_line)
@@ -234,6 +245,9 @@ fn check_smoke(text: &str) -> Result<()> {
 
 
 fn check_span_lifecycle(text: &str) -> Result<()> {
+    if text.len() > MAX_TELEMETRY_CAPTURE_BYTES {
+        return Err("telemetry lifecycle output exceeds 1 MiB".into());
+    }
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() != 3 || lines[2] != "LIFECYCLE_OK" {
         return Err("span lifecycle guest did not finish with exact receipt and two JSONL rows".into());
@@ -367,6 +381,19 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn jsonl_verifier_rejects_oversized_records_before_parsing() {
+        let big = "x".repeat(super::MAX_TELEMETRY_LINE_BYTES + 1);
+        assert!(super::parse_unique_json_line(&big).is_err());
+        // The byte limit is UTF-8, not a permissive count of Unicode scalars.
+        let multibyte = "é".repeat(super::MAX_TELEMETRY_LINE_BYTES / 2 + 1);
+        assert!(super::parse_unique_json_line(&multibyte).is_err());
+        assert!(super::check_smoke(&big.repeat(65)).is_err());
+        assert!(super::check_span_lifecycle(&big.repeat(65)).is_err());
+        let short = r#"{"schema":"oreslang-otel.v1","signal":"metric"}"#;
+        assert!(super::parse_unique_json_line(short).is_ok());
+    }
+
     #[test]
     fn smoke_rejects_unrecognized_extra_telemetry_records() {
         use serde_json::json;
