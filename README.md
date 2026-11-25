@@ -1,155 +1,57 @@
-# oreslang-otel
+> **AI agent instructions (organization-wide):** Before working on code, issues, or pull requests, read and follow the [organization `AGENTS.md`](https://github.com/atto-lang/.github/blob/main/AGENTS.md), including its **merge-first stealth-development policy**. Honor any repository-local `AGENTS.md`, explicit holds, and GitHub-enforced rules.
 
-Native Oreslang telemetry: explicit trace/span correlation, structured logs,
-monotonic duration measurement and metric observations. All telemetry policy,
-span lifecycle, integer/JSON encoding and console export live in `src/otel.ores`.
-The only runtime dependency is the standard library of `oreslang-source.java`.
-No Java imports, OTel SDK, other Oreslang package, network exporter or submodule
-is needed by this library. Rust/Maven/JDK are development tools only.
+# atto-otel
 
-## Use
+OpenTelemetry tracing, metrics, and logging integration for AttoLang.
 
-Add this repository as a pinned Git submodule:
+## Naming migration and language authority
 
-```sh
-git submodule add https://github.com/ores-truffle-oreslang/oreslang-otel.git dependencies/otel
-git submodule update --init --recursive
-```
+This repository is maintained at [atto-lang/atto-otel](https://github.com/atto-lang/atto-otel); use `https://github.com/atto-lang/atto-otel.git` for Git remotes and canonical `.atto` source examples. The normative language contract is [atto-spec](https://github.com/atto-lang/atto-spec), with executable guest evidence tracked by [atto-platform-conformance](https://github.com/atto-lang/atto-platform-conformance). Follow current ownership, borrowing, effects, actor, and syntax rules there; do not infer implemented features from a README or unexecuted CI.
 
-```ores
-import module otel from "../dependencies/otel/src/otel";
+## Purpose
 
-pub routine main(): void {
-  val span = otel.start("my-service", otel.trace_id(), "", "work");
-  span.event("INFO", "work started");
-  // Perform work; use try/catch/finally to finish on every exit path.
-  span.finish("ok", 0);
-  otel.metric("my-service", span.trace_id(), "work.duration", "histogram", "ns", span.elapsed_ns());
-  return;
-}
-```
+Instrumentation interfaces, context propagation, export compatibility, and actor-safe telemetry.
 
-Use `span.trace_id()` and `span.span_id()` to start children. Span completion is
-idempotent; events after completion are ignored; elapsed time freezes at finish.
-Keep each live span in its owning actor. Pass immutable IDs explicitly across
-actor boundaries, then create a new local child span. There is no thread-local
-ambient context, mutable global tracer or actor-shared span registry.
-`start_at(service, trace, id, parent, name, started_ns)` supports reconstructing
-context with an existing **same-process** monotonic start timestamp.
+## API and contract expectations
 
-`log(service, trace, span, severity, body)` emits an unconditional correlated log.
-For severity-aware logging, use `should_log(severity, minimum)` **before**
-constructing a message. This is explicitly caller-configured, does not read
-process environment on a hot path and never stores mutable logging policy
-across actors. Supported severities are `TRACE`, `DEBUG`, `INFO`, `WARN`
-(or `WARNING`), `ERROR` and `FATAL`; `ALL` and `OFF` are threshold-only.
-Unknown severities or thresholds fail closed in `should_log`.
+- Expose general-purpose interfaces that are usable without an Atto commercial account.
+- Document data/ownership semantics, error behavior, and supported runtimes.
+- Keep protocol and serialization details portable across relevant AttoLang backends.
 
-```ores
-val minimum = "INFO"; // Read configuration once in the owning actor.
-if otel.should_log("DEBUG", minimum); then
-  otel.log("my-service", trace, span_id, "DEBUG", expensive_message());
-fi
-```
+## Development and testing
 
-The explicit guard avoids evaluating `expensive_message()` when filtered.
-Calling `log()` directly remains unconditional for backwards compatibility.
-Filtering never implies redaction: callers must not pass secrets, credentials,
-request bodies or sensitive attributes into records.
+Use checked-in implementation and CI for actual commands. Add behavior-focused tests, including negative cases and lifecycle edge cases; distinguish local unit tests from executed multi-backend conformance.
 
-`metric(service, trace, name, kind, unit, value)` emits an integer observation:
-use `counter` for nonnegative deltas, `gauge` for current values and `histogram`
-for individual samples. Aggregation belongs to the consumer. No buffering,
-retry queue or unbounded attribute cache is allocated. Output uses one stdout
-println per JSON record; stdout I/O and serialization add measured overhead.
-A single call does not guarantee atomic records across separate Ores contexts,
-processes or unsynchronized output sinks; collectors must delimit JSON Lines
-and provide any required multi-writer serialization.
+## Project status
 
-Records use `schema: "oreslang-otel.v1"`, an epoch millisecond timestamp,
-`service`, `ores_trace_id`, and `signal`. Span records add opaque `span_id`,
-`parent_span_id`, `name`, `duration_ns`, `outcome`, and `http_status` (0 for no
-HTTP status). JSON string controls are escaped and signed int64 values are
-encoded exactly, without floating-point conversion. Consumers such as JavaScript
-must preserve integer precision for values beyond their safe integer range.
+This describes intended scope, not a verified feature matrix. Consult the source tree and exact-commit CI results for implementation status.
 
-## Runtime and validation
+## Ecosystem
 
-`SOURCE_REF` pins the required compiler/standard library. It supplies
-`process.monotonic_ns()`, `process.unix_ms()`, `process.unique_id()`, Unicode
-string escapes and (for HTTP consumers) `HttpExchange.completion/admitted_ns`.
-Build that revision with JDK 25 and Maven:
+- [AttoLang](https://github.com/atto-lang)
+- [Language specification](https://github.com/atto-lang/atto-spec)
+- [Cross-platform conformance](https://github.com/atto-lang/atto-platform-conformance)
 
-```sh
-mvn -q -f "$ORESLANG_SOURCE_DIR/pom.xml" -DskipTests package dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
-ORES_JAVA="$JAVA_HOME/bin/java" ./scripts/check.sh
-```
+## Repository ownership and contribution routing
 
-Export `ORESLANG_SOURCE_DIR` to the compiler checkout. Tests execute actual
-Oreslang and independently parse emitted records, checking correlation,
-idempotence, every JSON control character, Unicode and int64 boundaries.
-The demo server has real HTTP integration tests covering shared/isolated actors,
-framework responses, request completion and handler failures.
+**Belongs here:** OpenTelemetry trace, metric and log APIs, actor/task context propagation and exporter adapters.
 
-## Relationship to ORES telemetry and OpenTelemetry
+**Belongs elsewhere:** Instrumentation core and semantic conventions live here; deployment collector configuration belongs with apps/atto-co; compiler tracing intrinsics belong in backend repos.
 
-Reviewed [ores-otel-clients](https://github.com/ores-otel/ores-otel-clients/tree/f96b893280541914e904ccc8ea28be8422b8a44a)
-and [ores-otel-interfaces](https://github.com/ores-otel/ores-otel-interfaces/tree/345bd97b8564ce97daa60110b41bfd66b68b6bc1).
-This implementation follows their explicit correlation and `ores-trace-*` naming,
-keeps application IDs distinct from native OTel IDs, and emits no request bodies,
-cookies or arbitrary headers automatically.
+**Security and portability boundary:** Prevent cross-tenant trace leakage and secret attributes, bound queues and backpressure, and preserve cancellation and actor ownership.
 
-This is an initial native telemetry library, not full OpenTelemetry or ORES
-contract conformance. Its JSON Lines schema is library-local: it is **not OTLP**,
-and UUID span IDs are not W3C span IDs. W3C traceparent/tracestate propagation,
-OTLP transport, sampling, batching/retries, profiles, distributed context,
-configuration loading and canonical ORES contract admission are not implemented.
-The demo starts a local trace per admitted request and returns X-Ores-Trace-Id;
-it does not trust incoming correlation headers or imply cross-service tracing.
+AttoLang is the canonical project name; new source, examples and documentation use `.atto` and the `atto-lang` repository organization. This README defines scope, not feature readiness.
 
-## Exact integer encoding and local checks
+**Acceptance:** name exact source SHA/tree, runtime/toolchain, positive and negative checks and execution receipt before claiming support. Host-only tests and empty CI steps do not prove guest execution.
 
-Integer encoding stays in native Oreslang. Digit selection uses at most four exact comparisons/subtractions per nonzero decimal position, without floating-point division or a Java formatter. The required core runtime preserves signed int64 ordering beyond 2^53.
+## W3C trace context v00 (host reference only)
 
-The Rust checker replaces tests/check.py and independently parses actual Oreslang output. It retains all smoke checks for correlation, escaping, idempotence and severity gating, then checks 215 decimal boundaries and deterministic random int64 samples against Rust integer formatting. Run `cargo test --locked --manifest-path tools/telemetry-check/Cargo.toml` for malformed-record rejection checks.
+A small, dependency-free `reference/trace_context.py` parses and formats 55-character W3C `traceparent` version-00 headers and exposes the sampled flag. Rejects all-zero trace/span IDs, uppercase/non-hex input, unsupported versions and invalid flag widths. Use `python3 -m unittest discover -s tests -v` to validate the reference behavior.
 
-The development launcher validates that `ORESLANG_SOURCE_DIR` is a clean compiler checkout at `SOURCE_REF` before invoking Java. Build its classes and classpath from that revision first. The checkout check identifies source; it does not attest the ignored compiled classes.
+This does not implement Atto actor context propagation, OTLP export, metrics or logging, and it makes no guest-execution claim. Follow-up backend adapters must ensure tenant boundaries do not leak trace data.
 
-The compiler-launch host admission regression suite is implemented in Rust (no Python):
-`cargo test --locked --manifest-path tools/compiler-admission/Cargo.toml`.
-It covers exact clean source revisions, invalid/floating pins, dirty and untracked
-files, and rejection of a nested directory masquerading as a Git checkout.
-These use isolated mock Java launchers; they do not certify guest compiler behavior.
+## Legacy migration provenance and gates
 
-## Backend-independent smoke output oracle
+The original `ores-truffle-oreslang/oreslang-otel` repository is archived; the current repository is `atto-lang/atto-otel`. This is a distinct repository identity, not proof of an original-ID transfer or equivalent feature support. Preserve historical `.ores` source, CLI, package, ABI and API identifiers until separately verified replacements exist. Portable OpenTelemetry tracing, logging, metrics and propagation contracts belong here; production observability SaaS, log retention services and cloud accounts do not.
 
-The native Java compiler launcher remains the default development check.
-An **output-only** verification mode now accepts captured standard output from
-an independently executed `tests/smoke.ores` guest:
-
-```sh
-cargo run --locked --manifest-path tools/telemetry-check/Cargo.toml -- \
-  --check-smoke-output path/to/captured-guest.jsonl
-```
-
-The verifier imposes a 1 MiB input limit, strict UTF-8/JSON parsing, exact
-record counts, severity filtering, span correlation, JSON control escaping,
-timestamp bounds and integer/metric observations. Additional semantic negative
-controls are covered by `cargo test --locked`. A passing output check is
-**not evidence that any backend compiled or executed the guest**: the caller
-must separately bind exact compiler SHA, target/runtime, command, exit status
-and raw stdout digest. Run the real fixture independently for Java JIT/AOT,
-LLVM native, WASM (Node or browser worker), Cranelift, .NET Native AOT and
-JavaScript transpilation. Backend support and portability remain unverified
-until actual executions complete; there is no model-output fallback.
-
-## Repository ownership and migration (2026-11-08)
-
-**Public language:** AttoLang; **current legacy home:** `ores-truffle-oreslang/oreslang-otel`. Preserve old `.ores` files, `oreslang-*` repository, CLI, package and API names as compatibility surfaces pending a separately validated change.
-
-- **Belongs in this repository:** portable OpenTelemetry tracing/logging/metric APIs and propagation contracts.
-- **Does not belong here:** production observability SaaS, log-retention service or cloud accounts.
-- **Organization boundary:** [atto-lang](https://github.com/atto-lang) hosts portable language semantics, compiler targets, standard libraries, SDKs, tooling, conformance and examples. [atto-co](https://github.com/atto-co) separately owns managed cloud deployment, identity, billing, tenant hosting, registries and commercial services. A pre-existing similarly named `atto-*` repo is not assumed to be a transferred copy of this Git repository.
-- **Initial migration proposal:** transfer this repository under the same name/ID to `atto-lang/oreslang-otel` **only after** approval; no direct move from this old org into `atto-co` is currently authorized. Any future AttoCo product carve-out requires its own owner/security/consumer review.
-
-**Maintainer migration checklist:** coordinate ownership and exact source head in [issue #26](https://github.com/ores-truffle-oreslang/.github/issues/26); follow the private [migration runbook draft #25](https://github.com/ores-truffle-oreslang/.github/pull/25). Inventory numeric repo ID and exact SHA/tree, PRs/releases, branch protections/rulesets, target visibility and permissions, Actions runners, secrets, webhooks, GitHub Apps, packages, Pages and consumer URLs; record source/target admin, independent security review and rollback owner. Never cross-org mirror private source without separate authorization. Perform only an authorized GitHub identity-preserving transfer; verify original ID/history/tree and restore controls afterward, update references incrementally and rerun **executed exact-head tests**. `steps=[]`/`null` is `NOT_EXECUTED`; host/static checks are not guest execution evidence or production safety proof.
+[atto-lang](https://github.com/atto-lang) owns portable language libraries, compilers, tooling, tests and examples; [atto-co](https://github.com/atto-co) owns hosted deployment, tenant infrastructure, identity and billing. A future original-ID transfer or product carve-out requires separate source/target owner and independent security approval. Inventory exact SHA/tree, numeric ID, visibility, permissions, protections, PRs, releases, packages, dependencies, runners, secrets, applications, webhooks, Pages and rollback owner; verify preservation and rerun exact-head tests after an actual transfer. Never mirror private source without authorization. Zero-step jobs are NOT_EXECUTED; host-only checks do not establish native guest/compiler execution or production safety.
