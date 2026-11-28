@@ -135,8 +135,15 @@ define module otel as
     pub span_id(): String { return self.id; }
     pub elapsed_ns(): int {
       if self.ended; then return self.duration; fi
-      val int elapsed = now_ns() - self.started;
-      return elapsed < 0 ? 0 : elapsed;
+      val int current = now_ns();
+      if current <= self.started; then return 0; fi
+      // Subtraction may overflow signed int64 when callers reconstruct a
+      // corrupted or extremely old start_at timestamp. Saturate instead of
+      // raising an arithmetic exception during span teardown.
+      if self.started < 0 && current > 9223372036854775807 + self.started; then
+        return 9223372036854775807;
+      fi
+      return current - self.started;
     }
     pub event(String level, String message): void {
       if !self.ended; then log(self.service, self.trace, self.id, level, message); fi
